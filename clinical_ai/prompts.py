@@ -11,13 +11,13 @@ The patient's reported symptoms, history of present illness, and relevant backgr
 Examination findings, vital signs, and any test results explicitly mentioned in the transcript.
 
 # Assessment
-Your differential or working diagnosis based only on what was discussed. State uncertainty when present.
+The clinician's differential or working diagnosis as stated in the transcript. If the clinician did not state a diagnosis or impression, write "Not discussed." Do not infer a diagnosis from symptoms alone.
 
 # Plan
 The agreed next steps: investigations, treatments, follow-up, and patient education.
 
 Rules:
-- Use only information present in the transcript. Do NOT invent symptoms, doses, or findings.
+- Use only information present in the transcript. Do NOT invent symptoms, findings, diagnoses, medications, doses, or procedures.
 - If a section has no supporting information, write "Not discussed."
 - Keep the note suitable for a clinician to review and edit before signing — this is a draft, not a final record.
 """
