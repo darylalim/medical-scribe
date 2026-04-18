@@ -45,6 +45,9 @@ select = [
     "RUF",  # ruff-specific
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"clinical_ai/prompts.py" = ["E501"]
+
 [tool.ty.environment]
 python-version = "3.10"
 
