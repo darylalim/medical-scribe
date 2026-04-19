@@ -1,4 +1,4 @@
-# clinical-ai
+# clinical-documentation
 
 Local Apple Silicon pipeline for clinical documentation:
 
@@ -36,6 +36,8 @@ uv run streamlit run app.py
 ```
 
 On first run, MedGemma weights (~14 GB) download into `~/.cache/huggingface` — be patient. Subsequent launches load from cache in seconds.
+
+Uploads are capped at **100 MB** (`.streamlit/config.toml`). Split longer recordings before uploading.
 
 The UI is a single page with five states:
 
@@ -83,23 +85,25 @@ uv run transcribe.py --help
 ## Project layout
 
 ```
-clinical_ai/          # backend package (no streamlit)
-  asr.py              # MedASR loader + transcribe
-  device.py           # pick_device
-  llm.py              # MedGemma loader + stream_soap
-  prompts.py          # SOAP system prompt + message formatter
-app.py                # Streamlit UI (single entry point)
-transcribe.py         # CLI shim over clinical_ai.asr
+clinical_documentation/    # backend package (no streamlit)
+  asr.py                   # MedASR loader + transcribe
+  device.py                # pick_device
+  llm.py                   # MedGemma loader + stream_soap
+  prompts.py               # SOAP system prompt + message formatter
+app.py                     # Streamlit UI (single entry point)
+transcribe.py              # CLI shim over clinical_documentation.asr
+.streamlit/config.toml     # server config (maxUploadSize = 100 MB)
 tests/
-  test_asr.py
-  test_device.py
-  test_integration.py  # gated by @pytest.mark.integration
-  test_llm.py
-  test_prompts.py
-  test_transcribe.py   # covers require_hf_token
+  test_app.py              # state-machine helpers + AppTest smoke
+  test_asr.py              # load_asr_pipeline + transcribe
+  test_device.py           # pick_device precedence
+  test_integration.py      # gated by @pytest.mark.integration
+  test_llm.py              # load_medgemma + stream_soap
+  test_prompts.py          # SOAP prompt + format_soap_messages
+  test_transcribe.py       # CLI require_hf_token
 docs/superpowers/
-  specs/              # design spec
-  plans/              # implementation plan
+  specs/                   # design spec
+  plans/                   # implementation plan
 ```
 
 ## Development
@@ -126,8 +130,8 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # 21 unit tests
-uv run pytest --cov=clinical_ai --cov-report=term-missing # with coverage
+uv run pytest                                             # 26 unit tests
+uv run pytest --cov=clinical_documentation --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```
 
