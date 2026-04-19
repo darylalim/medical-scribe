@@ -5,6 +5,22 @@ import pytest
 from clinical_ai.llm import load_medgemma, stream_soap
 
 
+def test_stream_soap_populates_meta_finish_reason(mocker):
+    tokenizer = mocker.MagicMock()
+    tokenizer.apply_chat_template.return_value = "PROMPT"
+    chunks = [
+        SimpleNamespace(text="part1", finish_reason=None),
+        SimpleNamespace(text="part2", finish_reason="length"),
+    ]
+    mocker.patch("clinical_ai.llm.stream_generate", return_value=iter(chunks))
+    mocker.patch("clinical_ai.llm.make_sampler", return_value="SAMPLER")
+
+    meta: dict = {}
+    list(stream_soap(object(), tokenizer, "x", meta=meta))
+
+    assert meta["finish_reason"] == "length"
+
+
 def test_load_medgemma_calls_mlx_load_with_default_model_id(mocker):
     fake_model = object()
     fake_tokenizer = object()

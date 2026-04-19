@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import traceback
 
 from dotenv import load_dotenv
@@ -67,9 +68,8 @@ def _llm():
 
 
 def show_error(label: str, exc: BaseException) -> None:
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
     st.error(f"{label}: {type(exc).__name__}: {exc}")
-    with st.expander("Details"):
-        st.code("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
 
 
 def main() -> None:
@@ -157,8 +157,9 @@ def main() -> None:
         st.subheader("SOAP note")
         placeholder = st.empty()
         buf = ""
+        meta: dict[str, object] = {}
         try:
-            for chunk in stream_soap(model, tokenizer, st.session_state["tx_edit"]):
+            for chunk in stream_soap(model, tokenizer, st.session_state["tx_edit"], meta=meta):
                 buf += chunk
                 placeholder.markdown(buf)
         except Exception as exc:
@@ -169,6 +170,12 @@ def main() -> None:
             return
         st.session_state["soap"] = buf
         st.session_state["soap_edit"] = buf
+        if meta.get("finish_reason") == "length":
+            st.warning(
+                "The SOAP note reached the output token limit and may be incomplete. "
+                "Verify all four sections (Subjective, Objective, Assessment, Plan) "
+                "are present before signing or downloading."
+            )
 
     if st.session_state["soap"] is None:
         return  # Stay in State C.
