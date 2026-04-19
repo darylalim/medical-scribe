@@ -1,7 +1,7 @@
 [project]
 name = "clinical-ai"
 version = "0.1.0"
-description = "Clinical AI platform — MedASR inference."
+description = "Clinical AI platform — MedASR transcription with MedGemma SOAP-note generation."
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "transformers @ git+https://github.com/huggingface/transformers.git@65dc261512cbdb1ee72b88ae5b222f2605aad8e5",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,16 @@ load_dotenv()
 
 from clinical_ai.asr import load_asr_pipeline, transcribe  # noqa: E402
 from clinical_ai.device import pick_device  # noqa: E402
+
+
+def require_hf_token() -> None:
+    if not os.environ.get("HF_TOKEN"):
+        print(
+            "error: HF_TOKEN not set — copy .env.example to .env and add your "
+            "Hugging Face token (https://huggingface.co/settings/tokens).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 def fetch_sample(model_id: str) -> Path:
@@ -43,6 +54,7 @@ def main() -> int:
         help="Download and transcribe the sample audio bundled with the model repo.",
     )
     args = ap.parse_args()
+    require_hf_token()
 
     if args.sample:
         audio_path = fetch_sample(args.model)
