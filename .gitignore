@@ -38,6 +38,7 @@ htmlcov/
 
 # Local audio
 audio/
+samples/
 *.wav
 *.mp3
 *.flac

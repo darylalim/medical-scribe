@@ -16,6 +16,8 @@ load_dotenv()
 from clinical_documentation.asr import load_asr_pipeline, transcribe  # noqa: E402
 from clinical_documentation.device import pick_device  # noqa: E402
 
+LOCAL_SAMPLE = Path(__file__).parent / "samples" / "test_audio.wav"
+
 
 def require_hf_token() -> None:
     if not os.environ.get("HF_TOKEN"):
@@ -28,6 +30,9 @@ def require_hf_token() -> None:
 
 
 def fetch_sample(model_id: str) -> Path:
+    if LOCAL_SAMPLE.exists():
+        return LOCAL_SAMPLE
+
     from huggingface_hub import hf_hub_download
 
     return Path(hf_hub_download(repo_id=model_id, filename="test_audio.wav"))
@@ -51,7 +56,10 @@ def main() -> int:
     ap.add_argument(
         "--sample",
         action="store_true",
-        help="Download and transcribe the sample audio bundled with the model repo.",
+        help=(
+            "Transcribe samples/test_audio.wav if present, else download "
+            "test_audio.wav from --model's repo."
+        ),
     )
     args = ap.parse_args()
     require_hf_token()
