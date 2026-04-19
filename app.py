@@ -79,16 +79,27 @@ def main() -> None:
     require_hf_token()
 
     # Eager model load so warmup happens once and any error surfaces before the user uploads.
-    with st.spinner("Loading models (first run downloads ~14 GB; subsequent runs are instant)…"):
+    if not st.session_state.get("_models_loaded"):
+        with st.spinner(
+            "Loading models (first run downloads ~14 GB; subsequent runs are instant)…"
+        ):
+            try:
+                asr_pipe = _asr()
+            except Exception as exc:
+                show_error("Failed to load MedASR", exc)
+                st.stop()
+            try:
+                model, tokenizer = _llm()
+            except Exception as exc:
+                show_error("Failed to load MedGemma", exc)
+                st.stop()
+        st.session_state["_models_loaded"] = True
+    else:
         try:
             asr_pipe = _asr()
-        except Exception as exc:
-            show_error("Failed to load MedASR", exc)
-            st.stop()
-        try:
             model, tokenizer = _llm()
         except Exception as exc:
-            show_error("Failed to load MedGemma", exc)
+            show_error("Failed to load models", exc)
             st.stop()
 
     # State A: audio upload
@@ -136,6 +147,12 @@ def main() -> None:
     )
 
     if st.button("Generate SOAP note", type="primary"):
+        if not st.session_state["tx_edit"].strip():
+            st.warning(
+                "Transcript is empty — please provide or correct the transcription "
+                "before generating a SOAP note."
+            )
+            return
         # State D: streaming SOAP
         st.subheader("SOAP note")
         placeholder = st.empty()
