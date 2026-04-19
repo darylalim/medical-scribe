@@ -20,6 +20,8 @@ Everything runs locally. Audio and generated notes stay in process memory — th
    ```
    The first install pulls a pinned build of `transformers` from source (MedASR needs v5.0+), plus `streamlit`, `mlx-lm`, and `mlx`. Expect a few minutes.
 
+   > **iCloud users:** `uv sync` creates `.venv/` inside the repo. If this repo lives on iCloud Drive, iCloud can replace symlinks with alias files during sync — silently breaking the virtualenv on another device. If you plan to use this on multiple machines, either keep the repo outside iCloud Drive or exclude `.venv/` from iCloud sync.
+
 3. **Set your Hugging Face token.** Create a read-access token at https://huggingface.co/settings/tokens, then:
    ```bash
    cp .env.example .env
