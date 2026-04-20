@@ -74,7 +74,7 @@ uv run transcribe.py --help
 | `--device` | `auto` | `cpu`, `cuda`, or `mps`. Auto picks the best available. |
 | `--chunk-s` | `20.0` | Seconds per inference chunk (long audio is split). |
 | `--stride-s` | `2.0` | Overlap between chunks to avoid word splits. |
-| `--sample` | — | Fetch and transcribe the MedASR sample audio. |
+| `--sample` | — | Transcribe the MedASR sample audio. Prefers local `samples/test_audio.wav` if present; otherwise downloads from the model repo. |
 
 ## Notes
 
@@ -100,10 +100,7 @@ tests/
   test_integration.py      # gated by @pytest.mark.integration
   test_llm.py              # load_medgemma + stream_soap
   test_prompts.py          # SOAP prompt + format_soap_messages
-  test_transcribe.py       # CLI require_hf_token
-docs/superpowers/
-  specs/                   # design spec
-  plans/                   # implementation plan
+  test_transcribe.py       # CLI require_hf_token + fetch_sample
 ```
 
 ## Development
@@ -130,7 +127,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # 26 unit tests
+uv run pytest                                             # 29 unit tests
 uv run pytest --cov=clinical_documentation --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```

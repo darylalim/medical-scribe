@@ -36,10 +36,13 @@ htmlcov/
 # macOS
 .DS_Store
 
-# Local audio
+# Local audio & samples
 audio/
 samples/
 *.wav
 *.mp3
 *.flac
 *.m4a
+
+# Local docs (planning artifacts)
+docs/

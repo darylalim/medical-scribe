@@ -12,7 +12,7 @@ Local-first clinical documentation pipeline for Apple Silicon. Transcribes physi
 - `app.py` — Streamlit UI. The only file that imports `streamlit`.
 - `transcribe.py` — thin CLI shim over `clinical_documentation.asr`.
 - `.streamlit/config.toml` — server config (caps upload at `maxUploadSize = 100` MB).
-- `tests/` — 26 unit tests + 1 gated integration test.
+- `tests/` — 29 unit tests + 1 gated integration test.
 
 ## Commands
 
@@ -43,8 +43,3 @@ Both require `HF_TOKEN` in `.env` and acceptance of the Health AI Developer Foun
 
 - `google/medasr` — ASR, ~400 MB, runs on MPS.
 - `mlx-community/medgemma-27b-text-it-4bit` — SOAP generator, ~14 GB, runs on MLX (unified memory). First run downloads weights into `~/.cache/huggingface`.
-
-## Docs
-
-- Design: `docs/superpowers/specs/2026-04-18-streamlit-soap-pipeline-design.md`
-- Plan: `docs/superpowers/plans/2026-04-18-streamlit-soap-pipeline.md`
