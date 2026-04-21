@@ -1,4 +1,4 @@
-# clinical-documentation
+# medical-scribe
 
 Local Apple Silicon pipeline for clinical documentation:
 
@@ -58,7 +58,7 @@ Outputs are **drafts**. A clinician must review and edit before signing.
 ## Project layout
 
 ```
-clinical_documentation/    # backend package (no streamlit)
+medical_scribe/            # backend package (no streamlit)
   __init__.py              # public API re-exports (__all__ is canonical)
   asr.py                   # MedASR loader + transcribe
   device.py                # pick_device
@@ -101,7 +101,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 
 ```bash
 uv run pytest                                             # 25 unit tests
-uv run pytest --cov=clinical_documentation --cov-report=term-missing # with coverage
+uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```
 
