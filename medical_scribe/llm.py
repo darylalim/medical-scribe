@@ -8,7 +8,7 @@ from typing import Any
 from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 
-from clinical_documentation.prompts import format_soap_messages
+from medical_scribe.prompts import format_soap_messages
 
 DEFAULT_MODEL_ID = "mlx-community/medgemma-27b-text-it-4bit"
 DEFAULT_MAX_TOKENS = 2048

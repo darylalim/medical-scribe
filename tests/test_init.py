@@ -1,4 +1,4 @@
-"""Public API surface for the clinical_documentation package.
+"""Public API surface for the medical_scribe package.
 
 Asserts `__all__` stays in sync with its defining modules: every name advertised
 is importable at the package level and is the same object as its module-level
@@ -6,8 +6,8 @@ definition. Catches re-export drift (renames, removals, accidental wrappers)."""
 
 from __future__ import annotations
 
-import clinical_documentation
-from clinical_documentation import asr, device, llm
+import medical_scribe
+from medical_scribe import asr, device, llm
 
 
 def test_package_reexports_match_module_level_definitions():
@@ -21,7 +21,7 @@ def test_package_reexports_match_module_level_definitions():
         "transcribe": asr.transcribe,
     }
     for name, canonical in expected.items():
-        assert getattr(clinical_documentation, name) is canonical, (
-            f"clinical_documentation.{name} is not the same object as its module-level definition"
+        assert getattr(medical_scribe, name) is canonical, (
+            f"medical_scribe.{name} is not the same object as its module-level definition"
         )
-    assert set(clinical_documentation.__all__) == set(expected)
+    assert set(medical_scribe.__all__) == set(expected)

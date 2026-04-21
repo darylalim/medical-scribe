@@ -45,7 +45,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"clinical_documentation/prompts.py" = ["E501"]
+"medical_scribe/prompts.py" = ["E501"]
 
 [tool.ty.environment]
 python-version = "3.10"
@@ -59,4 +59,4 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["clinical_documentation"]
+source = ["medical_scribe"]

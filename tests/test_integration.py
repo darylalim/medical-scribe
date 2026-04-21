@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from clinical_documentation.asr import load_asr_pipeline, transcribe
-from clinical_documentation.device import pick_device
+from medical_scribe.asr import load_asr_pipeline, transcribe
+from medical_scribe.device import pick_device
 
 
 @pytest.mark.integration

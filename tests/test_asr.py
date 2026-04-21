@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from clinical_documentation.asr import load_asr_pipeline, transcribe
+from medical_scribe.asr import load_asr_pipeline, transcribe
 
 
 def test_load_asr_pipeline_calls_transformers_with_right_args(mocker):
     fake_pipe = object()
-    pipeline_mock = mocker.patch("clinical_documentation.asr.pipeline", return_value=fake_pipe)
+    pipeline_mock = mocker.patch("medical_scribe.asr.pipeline", return_value=fake_pipe)
 
     result = load_asr_pipeline("google/medasr", "mps")
 

@@ -16,7 +16,7 @@ load_dotenv()
 
 import streamlit as st  # noqa: E402
 
-from clinical_documentation import (  # noqa: E402
+from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_ID,
     load_asr_pipeline,
