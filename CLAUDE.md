@@ -1,6 +1,6 @@
 # Medical Scribe
 
-Local-first clinical documentation pipeline for Apple Silicon. Transcribes physician-patient audio with Google MedASR, then drafts a SOAP note with Google MedGemma-27B (MLX 4-bit). Runs entirely locally; audio and notes stay in process memory.
+Local-first pipeline for Apple Silicon. Transcribes physician-patient audio with Google MedASR, then drafts a SOAP note with Google MedGemma-27B (MLX 4-bit). Runs entirely locally; audio and notes stay in process memory.
 
 ## Architecture
 

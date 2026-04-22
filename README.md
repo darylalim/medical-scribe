@@ -1,6 +1,6 @@
 # medical-scribe
 
-Local Apple Silicon pipeline for clinical documentation:
+Local-first pipeline for Apple Silicon:
 
 1. **Transcribe** a patient-visit recording with [Google MedASR](https://huggingface.co/google/medasr) (Conformer-CTC, 105M parameters).
 2. **Review** the transcript and fix any misheard terms.
