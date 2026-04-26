@@ -29,6 +29,12 @@ htmlcov/
 # Claude Code (user-specific permissions)
 .claude/settings.local.json
 
+# Superpowers (brainstorming companion artifacts)
+.superpowers/
+
+# Git worktrees (project-local isolated workspaces)
+.worktrees/
+
 # IDE
 .vscode/
 .idea/
