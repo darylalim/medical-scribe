@@ -72,3 +72,51 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     assert not at.exception, f"app raised: {at.exception}"
     assert len(at.file_uploader) == 1
     assert at.file_uploader[0].label == "Upload a patient visit recording"
+
+
+def test_audio_mime_from_name_wav():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit.wav") == "audio/wav"
+
+
+def test_audio_mime_from_name_mp3():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit.mp3") == "audio/mpeg"
+
+
+def test_audio_mime_from_name_flac():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit.flac") == "audio/flac"
+
+
+def test_audio_mime_from_name_m4a():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit.m4a") == "audio/mp4"
+
+
+def test_audio_mime_from_name_uppercase_extension():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("VISIT.WAV") == "audio/wav"
+
+
+def test_audio_mime_from_name_none_input():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name(None) is None
+
+
+def test_audio_mime_from_name_no_extension():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit") is None
+
+
+def test_audio_mime_from_name_unknown_extension():
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name("visit.aiff") is None

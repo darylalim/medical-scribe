@@ -61,6 +61,26 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
         state["soap_edit"] = ""
 
 
+EXT_TO_MIME = {
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "flac": "audio/flac",
+    "m4a": "audio/mp4",
+}
+
+
+def audio_mime_from_name(name: object) -> str | None:
+    """Map filename extension to MIME for st.audio.
+
+    Returns None for missing or unrecognized inputs; the file_uploader's
+    type filter constrains live uploads to the four keys in EXT_TO_MIME,
+    so the None branch is defensive.
+    """
+    if not isinstance(name, str) or "." not in name:
+        return None
+    return EXT_TO_MIME.get(name.rsplit(".", 1)[-1].lower())
+
+
 def require_hf_token() -> None:
     if not os.environ.get("HF_TOKEN"):
         st.error(
