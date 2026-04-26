@@ -120,3 +120,31 @@ def test_audio_mime_from_name_unknown_extension():
     from app import audio_mime_from_name
 
     assert audio_mime_from_name("visit.aiff") is None
+
+
+def test_derive_stage_label_no_audio():
+    from app import derive_stage_label
+
+    state = {"audio_bytes": None, "tx": None, "soap": None}
+    assert derive_stage_label(state) == "No audio loaded"
+
+
+def test_derive_stage_label_transcribing():
+    from app import derive_stage_label
+
+    state = {"audio_bytes": b"abc", "tx": None, "soap": None}
+    assert derive_stage_label(state) == "Transcribing…"
+
+
+def test_derive_stage_label_transcript_ready():
+    from app import derive_stage_label
+
+    state = {"audio_bytes": b"abc", "tx": "some text", "soap": None}
+    assert derive_stage_label(state) == "Transcript ready"
+
+
+def test_derive_stage_label_soap_ready():
+    from app import derive_stage_label
+
+    state = {"audio_bytes": b"abc", "tx": "some text", "soap": "soap text"}
+    assert derive_stage_label(state) == "SOAP ready"

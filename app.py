@@ -6,7 +6,7 @@ import hashlib
 import os
 import sys
 import traceback
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from typing import cast
 
 from dotenv import load_dotenv
@@ -79,6 +79,21 @@ def audio_mime_from_name(name: object) -> str | None:
     if not isinstance(name, str) or "." not in name:
         return None
     return EXT_TO_MIME.get(name.rsplit(".", 1)[-1].lower())
+
+
+def derive_stage_label(state: Mapping[str, object]) -> str:
+    """Header stage label, derived from session state.
+
+    State D's 'Generating SOAP…' is set inline by the streaming branch
+    and is not derivable from state alone.
+    """
+    if state.get("audio_bytes") is None:
+        return "No audio loaded"
+    if state.get("tx") is None:
+        return "Transcribing…"
+    if state.get("soap") is None:
+        return "Transcript ready"
+    return "SOAP ready"
 
 
 def require_hf_token() -> None:
