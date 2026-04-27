@@ -14,6 +14,8 @@ def _fresh_state() -> dict:
         "tx_edit": "edited transcript",
         "soap": "generated soap",
         "soap_edit": "edited soap",
+        "expanded_pane": "left",
+        "soap_truncated": True,
     }
 
 
@@ -30,6 +32,8 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     assert state["tx_edit"] == ""
     assert state["soap"] is None
     assert state["soap_edit"] == ""
+    assert state["soap_truncated"] is False
+    assert state["expanded_pane"] == "left"
 
 
 def test_clear_downstream_state_after_tx_wipes_only_soap():
@@ -43,6 +47,8 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     assert state["soap"] is None
     assert state["soap_edit"] == ""
     assert state["audio_bytes"] == b"abc"
+    assert state["soap_truncated"] is False
+    assert state["expanded_pane"] == "left"
 
 
 def test_clear_downstream_state_unknown_stage_is_noop():
@@ -53,6 +59,18 @@ def test_clear_downstream_state_unknown_stage_is_noop():
     clear_downstream_state(state, after="nonsense")
 
     assert state == before
+
+
+def test_clear_downstream_state_preserves_expanded_pane():
+    from app import clear_downstream_state
+
+    for after in ("audio", "tx"):
+        state = _fresh_state()
+        state["expanded_pane"] = "right"
+        clear_downstream_state(state, after=after)
+        assert state["expanded_pane"] == "right", (
+            f"clear_downstream_state(after={after!r}) clobbered expanded_pane"
+        )
 
 
 def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):

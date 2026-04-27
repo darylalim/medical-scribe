@@ -36,6 +36,8 @@ INITIAL_STATE = {
     "tx_edit": "",
     "soap": None,
     "soap_edit": "",
+    "expanded_pane": None,
+    "soap_truncated": False,
 }
 
 
@@ -50,15 +52,21 @@ def reset_state() -> None:
 
 
 def clear_downstream_state(state: MutableMapping[str, object], after: str) -> None:
-    """Enforce the spec's state invariants. `after` names the last valid stage."""
+    """Enforce the spec's state invariants. `after` names the last valid stage.
+
+    `expanded_pane` is intentionally not touched — it's a UI focus concern,
+    orthogonal to workflow stage.
+    """
     if after == "audio":
         state["tx"] = None
         state["tx_edit"] = ""
         state["soap"] = None
         state["soap_edit"] = ""
+        state["soap_truncated"] = False
     elif after == "tx":
         state["soap"] = None
         state["soap_edit"] = ""
+        state["soap_truncated"] = False
 
 
 EXT_TO_MIME = {
