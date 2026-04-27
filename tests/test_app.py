@@ -91,6 +91,11 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     assert len(at.file_uploader) == 1
     assert at.file_uploader[0].label == "Upload a patient visit recording"
 
+    # New assertions for the redesign
+    rendered_markdown = " ".join(md.value for md in at.markdown)
+    assert "Medical Scribe" in rendered_markdown
+    assert "Upload audio to begin" in rendered_markdown
+
 
 def test_audio_mime_from_name_wav():
     from app import audio_mime_from_name
