@@ -148,3 +148,21 @@ def test_derive_stage_label_soap_ready():
 
     state = {"audio_bytes": b"abc", "tx": "some text", "soap": "soap text"}
     assert derive_stage_label(state) == "SOAP ready"
+
+
+def test_primary_action_label_no_soap_says_generate():
+    from app import primary_action_label
+
+    assert primary_action_label(None) == "Generate SOAP note"
+
+
+def test_primary_action_label_empty_string_says_generate():
+    from app import primary_action_label
+
+    assert primary_action_label("") == "Generate SOAP note"
+
+
+def test_primary_action_label_with_soap_says_regenerate():
+    from app import primary_action_label
+
+    assert primary_action_label("S: patient reports headache…") == "Regenerate SOAP"

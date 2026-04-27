@@ -96,6 +96,14 @@ def derive_stage_label(state: Mapping[str, object]) -> str:
     return "SOAP ready"
 
 
+def primary_action_label(soap: object) -> str:
+    """Right-pane primary button label.
+
+    Truthy soap value -> regenerate; falsy -> generate (covers None and "").
+    """
+    return "Regenerate SOAP" if soap else "Generate SOAP note"
+
+
 def require_hf_token() -> None:
     if not os.environ.get("HF_TOKEN"):
         st.error(
