@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import os
 import sys
 import traceback
@@ -92,13 +93,16 @@ def audio_mime_from_name(name: object) -> str | None:
 def derive_stage_label(state: Mapping[str, object]) -> str:
     """Header stage label, derived from session state.
 
-    State D's 'Generating SOAP…' is set inline by the streaming branch
-    and is not derivable from state alone.
+    The `_streaming` flag is set by the right-pane click handler before
+    streaming begins (via st.rerun), so it is available in session state
+    when the header renders on the streaming pass.
     """
     if state.get("audio_bytes") is None:
         return "No audio loaded"
     if state.get("tx") is None:
         return "Transcribing…"
+    if state.get("_streaming"):
+        return "Generating SOAP…"
     if state.get("soap") is None:
         return "Transcript ready"
     return "SOAP ready"
@@ -151,17 +155,18 @@ def _render_header() -> None:
         filename = st.session_state["audio_name"] or "no audio uploaded"
         st.markdown(
             f"<div style='text-align:right; padding-top:8px; color:#666'>"
-            f"{filename} · <em>{stage_label}</em></div>",
+            f"{html.escape(filename)} · <em>{html.escape(stage_label)}</em></div>",
             unsafe_allow_html=True,
         )
     st.divider()
 
 
-def _handle_upload(upload) -> None:
+def _handle_upload(upload) -> bool:
     """Validate and persist a new audio upload into session state.
 
     Uses hash-based 'is this actually new?' detection so reruns triggered
-    by other widgets don't re-transcribe the same audio.
+    by other widgets don't re-transcribe the same audio. Returns True if
+    new audio was persisted, False otherwise.
     """
     incoming_bytes = upload.getvalue()
     if len(incoming_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
@@ -181,6 +186,8 @@ def _handle_upload(upload) -> None:
         st.session_state["audio_name"] = upload.name
         st.session_state["audio_hash"] = incoming_hash
         clear_downstream_state(cast(MutableMapping[str, object], st.session_state), after="audio")
+        return True
+    return False
 
 
 def _render_left_pane(asr_pipe) -> None:
@@ -198,8 +205,9 @@ def _render_left_pane(asr_pipe) -> None:
             type=["wav", "mp3", "flac", "m4a"],
         )
         if upload is not None:
-            _handle_upload(upload)
-            st.rerun()
+            if _handle_upload(upload):
+                st.rerun()
+            return
         return
 
     # States B-E: audio player at top.

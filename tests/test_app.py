@@ -208,3 +208,15 @@ def test_update_truncation_flag_missing_finish_reason_sets_false():
     state: dict = {"soap_truncated": True}
     update_truncation_flag(state, {})
     assert state["soap_truncated"] is False
+
+
+def test_derive_stage_label_streaming_overrides_transcript_ready():
+    from app import derive_stage_label
+
+    state = {
+        "audio_bytes": b"abc",
+        "tx": "some text",
+        "soap": None,
+        "_streaming": True,
+    }
+    assert derive_stage_label(state) == "Generating SOAP…"
