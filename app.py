@@ -104,6 +104,11 @@ def primary_action_label(soap: object) -> str:
     return "Regenerate SOAP" if soap else "Generate SOAP note"
 
 
+def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str, object]) -> None:
+    """Set state['soap_truncated'] based on streaming meta's finish_reason."""
+    state["soap_truncated"] = meta.get("finish_reason") == "length"
+
+
 def require_hf_token() -> None:
     if not os.environ.get("HF_TOKEN"):
         st.error(

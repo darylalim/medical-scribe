@@ -166,3 +166,27 @@ def test_primary_action_label_with_soap_says_regenerate():
     from app import primary_action_label
 
     assert primary_action_label("S: patient reports headache…") == "Regenerate SOAP"
+
+
+def test_update_truncation_flag_finish_reason_length_sets_true():
+    from app import update_truncation_flag
+
+    state: dict = {"soap_truncated": False}
+    update_truncation_flag(state, {"finish_reason": "length"})
+    assert state["soap_truncated"] is True
+
+
+def test_update_truncation_flag_finish_reason_stop_sets_false():
+    from app import update_truncation_flag
+
+    state: dict = {"soap_truncated": True}
+    update_truncation_flag(state, {"finish_reason": "stop"})
+    assert state["soap_truncated"] is False
+
+
+def test_update_truncation_flag_missing_finish_reason_sets_false():
+    from app import update_truncation_flag
+
+    state: dict = {"soap_truncated": True}
+    update_truncation_flag(state, {})
+    assert state["soap_truncated"] is False
