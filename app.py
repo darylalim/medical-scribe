@@ -141,86 +141,136 @@ def show_error(label: str, exc: BaseException) -> None:
     st.error(f"{label}: {type(exc).__name__}: {exc}")
 
 
-def main() -> None:
-    st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
-    st.title("Medical Scribe — visit transcription & SOAP draft")
-    init_state()
-    require_hf_token()
-
-    # Eager model load so warmup happens once and any error surfaces before the user uploads.
-    # `@st.cache_resource` on _asr/_llm already makes subsequent reruns instant.
-    with st.spinner("Loading models (first run downloads ~14 GB; subsequent runs are instant)…"):
-        try:
-            asr_pipe = _asr()
-        except Exception as exc:
-            show_error("Failed to load MedASR", exc)
-            st.stop()
-        try:
-            model, tokenizer = _llm()
-        except Exception as exc:
-            show_error("Failed to load MedGemma", exc)
-            st.stop()
-
-    # State A: audio upload
-    upload = st.file_uploader(
-        "Upload a patient visit recording",
-        type=["wav", "mp3", "flac", "m4a"],
-    )
-    if upload is not None:
-        incoming_bytes = upload.getvalue()
-        if len(incoming_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
-            size_mb = len(incoming_bytes) // (1024 * 1024)
-            st.error(
-                f"File too large ({size_mb} MB). Maximum upload size is "
-                f"{MAX_UPLOAD_MB} MB — please split long recordings."
-            )
-            st.stop()
-        incoming_hash = hashlib.sha256(incoming_bytes).hexdigest()
-        is_new_upload = (
-            upload.name != st.session_state["audio_name"]
-            or incoming_hash != st.session_state["audio_hash"]
+def _render_header() -> None:
+    """Top header bar: app title (left) + filename + stage label (right)."""
+    cols = st.columns([3, 5])
+    with cols[0]:
+        st.markdown("### Medical Scribe")
+    with cols[1]:
+        stage_label = derive_stage_label(cast(Mapping[str, object], st.session_state))
+        filename = st.session_state["audio_name"] or "no audio uploaded"
+        st.markdown(
+            f"<div style='text-align:right; padding-top:8px; color:#666'>"
+            f"{filename} · <em>{stage_label}</em></div>",
+            unsafe_allow_html=True,
         )
-        if is_new_upload:
-            st.session_state["audio_bytes"] = incoming_bytes
-            st.session_state["audio_name"] = upload.name
-            st.session_state["audio_hash"] = incoming_hash
-            clear_downstream_state(
-                cast(MutableMapping[str, object], st.session_state), after="audio"
-            )
+    st.divider()
 
-            # State B: transcribe
-            with st.spinner("Transcribing audio…"):
-                try:
-                    text = transcribe(asr_pipe, st.session_state["audio_bytes"])
-                except Exception as exc:
-                    show_error("Could not transcribe audio", exc)
-                    reset_state()
-                    st.stop()
-            st.session_state["tx"] = text
-            st.session_state["tx_edit"] = text
 
-    if st.session_state["tx"] is None:
-        return  # Stay in State A.
+def _handle_upload(upload) -> None:
+    """Validate and persist a new audio upload into session state.
 
-    # State C: transcript ready
-    st.subheader("Transcript")
-    st.caption("Review the transcript before generating — fix any misheard terms.")
+    Uses hash-based 'is this actually new?' detection so reruns triggered
+    by other widgets don't re-transcribe the same audio.
+    """
+    incoming_bytes = upload.getvalue()
+    if len(incoming_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
+        size_mb = len(incoming_bytes) // (1024 * 1024)
+        st.error(
+            f"File too large ({size_mb} MB). Maximum upload size is "
+            f"{MAX_UPLOAD_MB} MB — please split long recordings."
+        )
+        st.stop()
+    incoming_hash = hashlib.sha256(incoming_bytes).hexdigest()
+    is_new_upload = (
+        upload.name != st.session_state["audio_name"]
+        or incoming_hash != st.session_state["audio_hash"]
+    )
+    if is_new_upload:
+        st.session_state["audio_bytes"] = incoming_bytes
+        st.session_state["audio_name"] = upload.name
+        st.session_state["audio_hash"] = incoming_hash
+        clear_downstream_state(cast(MutableMapping[str, object], st.session_state), after="audio")
+
+
+def _render_left_pane(asr_pipe) -> None:
+    """Left pane: audio uploader/player + transcript area, stage-aware."""
+    audio_bytes = st.session_state["audio_bytes"]
+    tx = st.session_state["tx"]
+    is_streaming = bool(st.session_state.get("_streaming"))
+
+    st.markdown("**Transcript**")
+
+    # State A: no audio yet — uploader fills the pane.
+    if audio_bytes is None:
+        upload = st.file_uploader(
+            "Upload a patient visit recording",
+            type=["wav", "mp3", "flac", "m4a"],
+        )
+        if upload is not None:
+            _handle_upload(upload)
+            st.rerun()
+        return
+
+    # States B-E: audio player at top.
+    mime = audio_mime_from_name(st.session_state["audio_name"])
+    st.audio(audio_bytes, format=mime if mime is not None else "audio/wav")
+
+    # State B: transcribing.
+    if tx is None:
+        with st.spinner("Transcribing audio…"):
+            try:
+                text = transcribe(asr_pipe, audio_bytes)
+            except Exception as exc:
+                show_error("Could not transcribe audio", exc)
+                reset_state()
+                st.stop()
+        st.session_state["tx"] = text
+        st.session_state["tx_edit"] = text
+        st.rerun()
+
+    # States C / D / E: editable transcript (disabled during streaming).
     st.text_area(
         "Transcript",
         key="tx_edit",
-        height=300,
+        height=400,
         label_visibility="collapsed",
+        disabled=is_streaming,
     )
 
-    if st.button("Generate SOAP note", type="primary"):
-        if not st.session_state["tx_edit"].strip():
-            st.warning(
-                "Transcript is empty — please provide or correct the transcription "
-                "before generating a SOAP note."
-            )
-            return
-        # State D: streaming SOAP
-        st.subheader("SOAP note")
+
+def _render_right_pane(model, tokenizer) -> None:
+    """Right pane: SOAP placeholder/streaming/editable area, stage-aware."""
+    audio_bytes = st.session_state["audio_bytes"]
+    tx = st.session_state["tx"]
+    soap = st.session_state["soap"]
+
+    st.markdown("**SOAP note**")
+
+    # State A: no audio yet.
+    if audio_bytes is None:
+        st.markdown("_Upload audio to begin._")
+        return
+
+    # State B: transcribing.
+    if tx is None:
+        st.markdown("_Awaiting transcript…_")
+        return
+
+    # Persistent truncation warning (visible whenever the flag is set).
+    if st.session_state.get("soap_truncated", False):
+        st.warning(
+            "The SOAP note reached the output token limit and may be incomplete. "
+            "Verify all four sections (Subjective, Objective, Assessment, Plan) "
+            "are present before signing or downloading."
+        )
+
+    # State C: SOAP idle.
+    if soap is None and not st.session_state.get("_streaming"):
+        st.markdown("_Generate the SOAP note from the reviewed transcript._")
+        if st.button(primary_action_label(soap), type="primary"):
+            if not st.session_state["tx_edit"].strip():
+                st.warning(
+                    "Transcript is empty — please provide or correct the transcription "
+                    "before generating a SOAP note."
+                )
+                return
+            st.session_state["_streaming"] = True
+            st.rerun()
+        return
+
+    # State D: streaming.
+    if st.session_state.get("_streaming"):
         placeholder = st.empty()
         buf = ""
         meta: dict[str, object] = {}
@@ -239,39 +289,65 @@ def main() -> None:
             show_error("SOAP generation failed", exc)
             st.session_state["soap"] = None
             st.session_state["soap_edit"] = ""
+            st.session_state["_streaming"] = False
             return
         st.session_state["soap"] = buf
         st.session_state["soap_edit"] = buf
-        if meta.get("finish_reason") == "length":
-            st.warning(
-                "The SOAP note reached the output token limit and may be incomplete. "
-                "Verify all four sections (Subjective, Objective, Assessment, Plan) "
-                "are present before signing or downloading."
-            )
+        update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
+        st.session_state["_streaming"] = False
+        st.rerun()
 
-    if st.session_state["soap"] is None:
-        return  # Stay in State C.
-
-    # State E: SOAP ready
-    st.subheader("SOAP note (editable)")
+    # State E: SOAP ready, editable.
     st.text_area(
         "SOAP note",
         key="soap_edit",
-        height=500,
+        height=400,
         label_visibility="collapsed",
     )
-    col1, col2 = st.columns(2)
-    with col1:
+    action_cols = st.columns([2, 2, 1])
+    with action_cols[0]:
+        if st.button(primary_action_label(soap), type="primary", key="regen_btn"):
+            st.session_state["_streaming"] = True
+            st.rerun()
+    with action_cols[1]:
         st.download_button(
             "Download .md",
             data=st.session_state["soap_edit"],
             file_name="soap_note.md",
             mime="text/markdown",
         )
-    with col2:
-        if st.button("Start over"):
+    with action_cols[2]:
+        if st.button("Start over", key="reset_btn"):
             reset_state()
             st.rerun()
+
+
+def main() -> None:
+    st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
+    init_state()
+    require_hf_token()
+
+    # Eager model load so warmup happens once and any error surfaces before the user uploads.
+    # `@st.cache_resource` on _asr/_llm already makes subsequent reruns instant.
+    with st.spinner("Loading models (first run downloads ~14 GB; subsequent runs are instant)…"):
+        try:
+            asr_pipe = _asr()
+        except Exception as exc:
+            show_error("Failed to load MedASR", exc)
+            st.stop()
+        try:
+            model, tokenizer = _llm()
+        except Exception as exc:
+            show_error("Failed to load MedGemma", exc)
+            st.stop()
+
+    _render_header()
+
+    cols = st.columns([1, 1])
+    with cols[0]:
+        _render_left_pane(asr_pipe)
+    with cols[1]:
+        _render_right_pane(model, tokenizer)
 
 
 if __name__ == "__main__":
