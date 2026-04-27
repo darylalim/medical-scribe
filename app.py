@@ -195,8 +195,18 @@ def _render_left_pane(asr_pipe) -> None:
     audio_bytes = st.session_state["audio_bytes"]
     tx = st.session_state["tx"]
     is_streaming = bool(st.session_state.get("_streaming"))
+    expanded = st.session_state["expanded_pane"]
 
-    st.markdown("**Transcript**")
+    title_cols = st.columns([5, 1])
+    with title_cols[0]:
+        st.markdown("**Transcript**")
+    # Expand toggle only after we have something to focus on (post-upload).
+    if audio_bytes is not None:
+        with title_cols[1]:
+            label = "⤡ collapse" if expanded == "left" else "⤢ expand"
+            if st.button(label, key="left_pane_toggle"):
+                st.session_state["expanded_pane"] = None if expanded == "left" else "left"
+                st.rerun()
 
     # State A: no audio yet — uploader fills the pane.
     if audio_bytes is None:
@@ -242,8 +252,18 @@ def _render_right_pane(model, tokenizer) -> None:
     audio_bytes = st.session_state["audio_bytes"]
     tx = st.session_state["tx"]
     soap = st.session_state["soap"]
+    expanded = st.session_state["expanded_pane"]
 
-    st.markdown("**SOAP note**")
+    title_cols = st.columns([5, 1])
+    with title_cols[0]:
+        st.markdown("**SOAP note**")
+    # Expand toggle only after upload (consistent with left pane).
+    if audio_bytes is not None:
+        with title_cols[1]:
+            label = "⤡ collapse" if expanded == "right" else "⤢ expand"
+            if st.button(label, key="right_pane_toggle"):
+                st.session_state["expanded_pane"] = None if expanded == "right" else "right"
+                st.rerun()
 
     # State A: no audio yet.
     if audio_bytes is None:
@@ -351,11 +371,17 @@ def main() -> None:
 
     _render_header()
 
-    cols = st.columns([1, 1])
-    with cols[0]:
+    expanded = st.session_state["expanded_pane"]
+    if expanded == "left":
         _render_left_pane(asr_pipe)
-    with cols[1]:
+    elif expanded == "right":
         _render_right_pane(model, tokenizer)
+    else:
+        cols = st.columns([1, 1])
+        with cols[0]:
+            _render_left_pane(asr_pipe)
+        with cols[1]:
+            _render_right_pane(model, tokenizer)
 
 
 if __name__ == "__main__":

@@ -220,3 +220,21 @@ def test_derive_stage_label_streaming_overrides_transcript_ready():
         "_streaming": True,
     }
     assert derive_stage_label(state) == "Generating SOAP…"
+
+
+def test_expanded_pane_toggle_round_trip():
+    """Direct state assignment is the toggle mechanism — verify the values
+    we use round-trip cleanly through INITIAL_STATE iteration."""
+    from app import INITIAL_STATE
+
+    state = dict(INITIAL_STATE)
+    assert state["expanded_pane"] is None
+
+    state["expanded_pane"] = "left"
+    assert state["expanded_pane"] == "left"
+
+    state["expanded_pane"] = "right"
+    assert state["expanded_pane"] == "right"
+
+    state["expanded_pane"] = None
+    assert state["expanded_pane"] is None
