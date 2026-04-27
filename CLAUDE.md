@@ -10,9 +10,9 @@ Local-first pipeline for Apple Silicon. Transcribes physician-patient audio with
   - `asr.py` — MedASR pipeline loader + `transcribe()` helper.
   - `llm.py` — MedGemma MLX loader + `stream_soap()` generator.
   - `prompts.py` — SOAP system prompt and `format_soap_messages()`.
-- `app.py` — Streamlit UI. The only file that imports `streamlit`.
+- `app.py` — Streamlit UI: persistent two-column shell with audio playback. The only file that imports `streamlit`.
 - `.streamlit/config.toml` — server config (caps upload at `maxUploadSize = 100` MB).
-- `tests/` — 25 unit tests + 1 gated integration test.
+- `tests/` — 46 unit tests + 1 gated integration test.
 
 ## Commands
 
