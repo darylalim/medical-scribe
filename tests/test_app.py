@@ -1,8 +1,14 @@
-"""Tests for app.py helpers. UI rendering is covered by a light AppTest smoke check;
-state-machine invariants are covered by driving clear_downstream_state with a plain dict
-so we don't depend on Streamlit's ScriptRunner for logic-level tests."""
+"""Tests for app.py.
+
+Logic-level tests use plain dicts to exercise the pure helpers and the
+state-machine invariants without booting Streamlit. A single AppTest
+smoke verifies the UI boots into State A with the expected layout
+markers.
+"""
 
 from __future__ import annotations
+
+import pytest
 
 
 def _fresh_state() -> dict:
@@ -25,15 +31,17 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="audio")
 
+    # Preserved (audio identity + orthogonal UI focus).
     assert state["audio_bytes"] == b"abc"
     assert state["audio_name"] == "a.wav"
     assert state["audio_hash"] == "deadbeef"
+    assert state["expanded_pane"] == "left"
+    # Cleared (downstream of new audio).
     assert state["tx"] is None
     assert state["tx_edit"] == ""
     assert state["soap"] is None
     assert state["soap_edit"] == ""
     assert state["soap_truncated"] is False
-    assert state["expanded_pane"] == "left"
 
 
 def test_clear_downstream_state_after_tx_wipes_only_soap():
@@ -42,13 +50,17 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="tx")
 
+    # Preserved (audio identity + transcript + orthogonal UI focus).
+    assert state["audio_bytes"] == b"abc"
+    assert state["audio_name"] == "a.wav"
+    assert state["audio_hash"] == "deadbeef"
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
+    assert state["expanded_pane"] == "left"
+    # Cleared (downstream of transcript edits).
     assert state["soap"] is None
     assert state["soap_edit"] == ""
-    assert state["audio_bytes"] == b"abc"
     assert state["soap_truncated"] is False
-    assert state["expanded_pane"] == "left"
 
 
 def test_clear_downstream_state_unknown_stage_is_noop():
@@ -73,6 +85,117 @@ def test_clear_downstream_state_preserves_expanded_pane():
         )
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("visit.wav", "audio/wav"),
+        ("visit.mp3", "audio/mpeg"),
+        ("visit.flac", "audio/flac"),
+        ("visit.m4a", "audio/mp4"),
+        ("VISIT.WAV", "audio/wav"),
+        (None, None),
+        ("visit", None),
+        ("visit.aiff", None),
+    ],
+    ids=[
+        "wav",
+        "mp3",
+        "flac",
+        "m4a",
+        "uppercase_extension",
+        "none_input",
+        "no_extension",
+        "unknown_extension",
+    ],
+)
+def test_audio_mime_from_name(name, expected):
+    from app import audio_mime_from_name
+
+    assert audio_mime_from_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ({"audio_bytes": None, "tx": None, "soap": None}, "No audio loaded"),
+        ({"audio_bytes": b"abc", "tx": None, "soap": None}, "Transcribing…"),
+        ({"audio_bytes": b"abc", "tx": "some text", "soap": None}, "Transcript ready"),
+        (
+            {"audio_bytes": b"abc", "tx": "some text", "soap": None, "_streaming": True},
+            "Generating SOAP…",
+        ),
+        ({"audio_bytes": b"abc", "tx": "some text", "soap": "soap text"}, "SOAP ready"),
+    ],
+    ids=[
+        "no_audio",
+        "transcribing",
+        "transcript_ready",
+        "streaming_overrides_transcript_ready",
+        "soap_ready",
+    ],
+)
+def test_derive_stage_label(state, expected):
+    from app import derive_stage_label
+
+    assert derive_stage_label(state) == expected
+
+
+@pytest.mark.parametrize(
+    ("soap", "expected"),
+    [
+        (None, "Generate SOAP note"),
+        ("", "Generate SOAP note"),
+        ("S: patient reports headache…", "Regenerate SOAP"),
+    ],
+    ids=[
+        "no_soap_says_generate",
+        "empty_string_says_generate",
+        "with_soap_says_regenerate",
+    ],
+)
+def test_primary_action_label(soap, expected):
+    from app import primary_action_label
+
+    assert primary_action_label(soap) == expected
+
+
+@pytest.mark.parametrize(
+    ("initial", "meta", "expected"),
+    [
+        (False, {"finish_reason": "length"}, True),
+        (True, {"finish_reason": "stop"}, False),
+        (True, {}, False),
+    ],
+    ids=[
+        "finish_reason_length_sets_true",
+        "finish_reason_stop_sets_false",
+        "missing_finish_reason_sets_false",
+    ],
+)
+def test_update_truncation_flag(initial, meta, expected):
+    from app import update_truncation_flag
+
+    state: dict = {"soap_truncated": initial}
+    update_truncation_flag(state, meta)
+    assert state["soap_truncated"] is expected
+
+
+def test_expanded_pane_toggle_round_trip():
+    from app import INITIAL_STATE
+
+    state = dict(INITIAL_STATE)
+    assert state["expanded_pane"] is None
+
+    state["expanded_pane"] = "left"
+    assert state["expanded_pane"] == "left"
+
+    state["expanded_pane"] = "right"
+    assert state["expanded_pane"] == "right"
+
+    state["expanded_pane"] = None
+    assert state["expanded_pane"] is None
+
+
 def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "hf_test_value")
 
@@ -91,155 +214,6 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     assert len(at.file_uploader) == 1
     assert at.file_uploader[0].label == "Upload a patient visit recording"
 
-    # New assertions for the redesign
     rendered_markdown = " ".join(md.value for md in at.markdown)
     assert "Medical Scribe" in rendered_markdown
     assert "Upload audio to begin" in rendered_markdown
-
-
-def test_audio_mime_from_name_wav():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit.wav") == "audio/wav"
-
-
-def test_audio_mime_from_name_mp3():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit.mp3") == "audio/mpeg"
-
-
-def test_audio_mime_from_name_flac():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit.flac") == "audio/flac"
-
-
-def test_audio_mime_from_name_m4a():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit.m4a") == "audio/mp4"
-
-
-def test_audio_mime_from_name_uppercase_extension():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("VISIT.WAV") == "audio/wav"
-
-
-def test_audio_mime_from_name_none_input():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name(None) is None
-
-
-def test_audio_mime_from_name_no_extension():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit") is None
-
-
-def test_audio_mime_from_name_unknown_extension():
-    from app import audio_mime_from_name
-
-    assert audio_mime_from_name("visit.aiff") is None
-
-
-def test_derive_stage_label_no_audio():
-    from app import derive_stage_label
-
-    state = {"audio_bytes": None, "tx": None, "soap": None}
-    assert derive_stage_label(state) == "No audio loaded"
-
-
-def test_derive_stage_label_transcribing():
-    from app import derive_stage_label
-
-    state = {"audio_bytes": b"abc", "tx": None, "soap": None}
-    assert derive_stage_label(state) == "Transcribing…"
-
-
-def test_derive_stage_label_transcript_ready():
-    from app import derive_stage_label
-
-    state = {"audio_bytes": b"abc", "tx": "some text", "soap": None}
-    assert derive_stage_label(state) == "Transcript ready"
-
-
-def test_derive_stage_label_soap_ready():
-    from app import derive_stage_label
-
-    state = {"audio_bytes": b"abc", "tx": "some text", "soap": "soap text"}
-    assert derive_stage_label(state) == "SOAP ready"
-
-
-def test_primary_action_label_no_soap_says_generate():
-    from app import primary_action_label
-
-    assert primary_action_label(None) == "Generate SOAP note"
-
-
-def test_primary_action_label_empty_string_says_generate():
-    from app import primary_action_label
-
-    assert primary_action_label("") == "Generate SOAP note"
-
-
-def test_primary_action_label_with_soap_says_regenerate():
-    from app import primary_action_label
-
-    assert primary_action_label("S: patient reports headache…") == "Regenerate SOAP"
-
-
-def test_update_truncation_flag_finish_reason_length_sets_true():
-    from app import update_truncation_flag
-
-    state: dict = {"soap_truncated": False}
-    update_truncation_flag(state, {"finish_reason": "length"})
-    assert state["soap_truncated"] is True
-
-
-def test_update_truncation_flag_finish_reason_stop_sets_false():
-    from app import update_truncation_flag
-
-    state: dict = {"soap_truncated": True}
-    update_truncation_flag(state, {"finish_reason": "stop"})
-    assert state["soap_truncated"] is False
-
-
-def test_update_truncation_flag_missing_finish_reason_sets_false():
-    from app import update_truncation_flag
-
-    state: dict = {"soap_truncated": True}
-    update_truncation_flag(state, {})
-    assert state["soap_truncated"] is False
-
-
-def test_derive_stage_label_streaming_overrides_transcript_ready():
-    from app import derive_stage_label
-
-    state = {
-        "audio_bytes": b"abc",
-        "tx": "some text",
-        "soap": None,
-        "_streaming": True,
-    }
-    assert derive_stage_label(state) == "Generating SOAP…"
-
-
-def test_expanded_pane_toggle_round_trip():
-    """Direct state assignment is the toggle mechanism — verify the values
-    we use round-trip cleanly through INITIAL_STATE iteration."""
-    from app import INITIAL_STATE
-
-    state = dict(INITIAL_STATE)
-    assert state["expanded_pane"] is None
-
-    state["expanded_pane"] = "left"
-    assert state["expanded_pane"] == "left"
-
-    state["expanded_pane"] = "right"
-    assert state["expanded_pane"] == "right"
-
-    state["expanded_pane"] = None
-    assert state["expanded_pane"] is None
