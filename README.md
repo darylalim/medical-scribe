@@ -43,13 +43,19 @@ On first run, MedGemma weights (~14 GB) download into `~/.cache/huggingface` —
 
 Uploads are capped at **100 MB** (`.streamlit/config.toml`). Split longer recordings before uploading.
 
-The UI is a single page with five states:
+The UI is a persistent two-column layout:
 
-1. **Upload** a `.wav` / `.mp3` / `.flac` / `.m4a` recording.
-2. **Transcribe** (automatic on upload). Transcript appears in an editable text area.
-3. **Review** the transcript and fix any ASR errors before generating.
-4. **Generate SOAP note.** Output streams token-by-token into a Markdown view.
-5. **Edit and download** the SOAP note as `soap_note.md`, or start over.
+- **Left pane** — audio uploader, playback, and editable transcript.
+- **Right pane** — SOAP note (placeholder → streaming → editable) with Regenerate, Download .md, and Start over actions.
+
+Each pane has an `⤢ expand` toggle for focused editing. The transcript is locked during SOAP streaming, and the truncation warning persists across reruns until the next regeneration.
+
+Workflow:
+
+1. **Upload** a `.wav` / `.mp3` / `.flac` / `.m4a` recording — transcription runs automatically.
+2. **Review** the transcript — replay the audio to verify ambiguous segments.
+3. **Generate** the SOAP note. Output streams into the right pane.
+4. **Edit, Regenerate, or download** as `soap_note.md`. Click **Start over** to reset.
 
 ## Notes
 
@@ -68,7 +74,7 @@ medical_scribe/            # backend package (no streamlit)
 app.py                     # Streamlit UI (single entry point)
 .streamlit/config.toml     # server config (maxUploadSize = 100 MB)
 tests/
-  test_app.py              # state-machine helpers + AppTest smoke
+  test_app.py              # app.py helpers + AppTest smoke
   test_asr.py              # load_asr_pipeline + transcribe
   test_device.py           # pick_device precedence
   test_init.py             # public API surface + re-export identity
@@ -101,7 +107,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # 25 unit tests
+uv run pytest                                             # 46 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```
