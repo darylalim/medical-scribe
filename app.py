@@ -293,6 +293,7 @@ def _render_right_pane(model, tokenizer) -> None:
                     "before generating a SOAP note."
                 )
                 return
+            st.session_state["soap_truncated"] = False
             st.session_state["_streaming"] = True
             st.rerun()
         return
@@ -335,6 +336,7 @@ def _render_right_pane(model, tokenizer) -> None:
     action_cols = st.columns([2, 2, 1])
     with action_cols[0]:
         if st.button(primary_action_label(soap), type="primary", key="regen_btn"):
+            st.session_state["soap_truncated"] = False
             st.session_state["_streaming"] = True
             st.rerun()
     with action_cols[1]:
