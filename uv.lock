@@ -719,7 +719,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "soundfile", specifier = ">=0.12.0" },
-    { name = "streamlit", specifier = ">=1.32" },
+    { name = "streamlit", specifier = ">=1.39" },
     { name = "torch", specifier = ">=2.1.0" },
     { name = "transformers", git = "https://github.com/huggingface/transformers.git?rev=65dc261512cbdb1ee72b88ae5b222f2605aad8e5" },
 ]
