@@ -43,19 +43,24 @@ On first run, MedGemma weights (~14 GB) download into `~/.cache/huggingface` —
 
 Uploads are capped at **100 MB** (`.streamlit/config.toml`). Split longer recordings before uploading.
 
-The UI is a persistent two-column layout:
+The UI has a sidebar plus two main-area tabs:
 
-- **Left pane** — audio uploader, playback, and editable transcript.
-- **Right pane** — SOAP note (placeholder → streaming → editable) with Regenerate, Download .md, and Start over actions.
-
-Each pane has an `⤢ expand` toggle for focused editing. The transcript is locked during SOAP streaming, and the truncation warning persists across reruns until the next regeneration.
+- **Sidebar** — `+ New session` button to reset state and start fresh.
+- **Transcript tab** — record audio in-browser via `st.audio_input`, or expand "Or upload an existing recording" to choose a `.wav` / `.mp3` / `.flac` / `.m4a` file. Once audio exists, the audio player and the editable transcript text area appear; the **Generate SOAP Note →** button at the bottom-right kicks off generation and auto-switches to the Notes tab.
+- **Notes tab** — the SOAP draft renders as four cards (Subjective / Objective / Assessment / Plan), one card per section. While the model streams, cards appear one at a time as each section completes; a "Generating…" indicator shows below until the last card lands. The action row at the bottom is `[Edit · Copy to clipboard]`.
+- **Edit mode** — clicking **Edit** turns each card into an editable text area in place; the action row becomes `[Done · Copy to clipboard]`. Done commits the edits back to the SOAP source. Copy can be clicked at any time, including mid-edit.
 
 Workflow:
 
-1. **Upload** a `.wav` / `.mp3` / `.flac` / `.m4a` recording — transcription runs automatically.
-2. **Review** the transcript — replay the audio to verify ambiguous segments.
-3. **Generate** the SOAP note. Output streams into the right pane.
-4. **Edit, Regenerate, or download** as `soap_note.md`. Click **Start over** to reset.
+1. **Record** the visit live with the mic widget — or expand the upload section to attach an existing `.wav` / `.mp3` / `.flac` / `.m4a` recording.
+2. **Review** the auto-generated transcript — replay the audio to verify ambiguous segments. Edit if needed.
+3. **Generate** the SOAP note. The view auto-switches to Notes; cards stream in section-by-section.
+4. **Edit** any card if the draft needs correction, then click Done.
+5. **Copy** the note to clipboard for paste into the EHR or chart.
+
+To retry the same visit with a different draft, edit the transcript and click **Generate SOAP Note** again — the button is idempotent and re-runs against the current transcript. To start completely over, click **+ New session** in the sidebar.
+
+Nothing is written to disk. Audio bytes and the SOAP draft live in process memory only.
 
 ## Notes
 
