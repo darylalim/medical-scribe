@@ -158,7 +158,7 @@ def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key
     `navigator.clipboard.writeText(text)` with a brief "✓ Copied" toast.
     Does NOT trigger a Streamlit rerun — the click stays purely client-side.
     """
-    payload = json.dumps(text)
+    payload = html.escape(json.dumps(text))
     safe_label = html.escape(label)
     btn_style = (
         "padding:0.45em 1.1em; border-radius:6px;"
@@ -438,8 +438,9 @@ def _render_notes_tab(model, tokenizer) -> None:
             return
 
         # Stream completed successfully. Persist and rerun to land in State E.
-        status_placeholder.empty()
-        cards_placeholder.empty()
+        # Don't call placeholder.empty() — Streamlit garbage-collects them on
+        # the rerun, and explicit clearing causes a visible flicker before
+        # State E's cards render in their place.
         st.session_state["soap"] = buf
         update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
         st.session_state["_streaming"] = False
