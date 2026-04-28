@@ -1,7 +1,11 @@
 """Tests for medical_scribe.soap_sections — SOAP-output parser, assembler,
 and clipboard formatter."""
 
-from medical_scribe.soap_sections import parse_soap_sections
+from medical_scribe.soap_sections import (
+    assemble_soap,
+    format_for_clipboard,
+    parse_soap_sections,
+)
 
 SAMPLE_FULL = """\
 ## Subjective
@@ -70,9 +74,6 @@ def test_parse_soap_sections_blank_lines_within_body_preserved():
     assert sections["Subjective"] == "line 1\n\nline 2"
 
 
-from medical_scribe.soap_sections import assemble_soap
-
-
 def test_assemble_soap_canonical_format_all_four():
     text = assemble_soap(
         {
@@ -119,9 +120,6 @@ def test_round_trip_parse_assemble_parse_is_noop():
     reassembled = assemble_soap(parsed_once)
     parsed_twice = parse_soap_sections(reassembled)
     assert parsed_twice == parsed_once
-
-
-from medical_scribe.soap_sections import format_for_clipboard
 
 
 def test_format_for_clipboard_canonical_format_all_four():
