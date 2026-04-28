@@ -19,8 +19,6 @@ def _fresh_state() -> dict:
         "tx": "some transcript",
         "tx_edit": "edited transcript",
         "soap": "generated soap",
-        "soap_edit": "edited soap",
-        "expanded_pane": "left",
         "soap_truncated": True,
         "active_tab": "notes",
         "is_editing": True,
@@ -41,13 +39,11 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     assert state["audio_bytes"] == b"abc"
     assert state["audio_name"] == "a.wav"
     assert state["audio_hash"] == "deadbeef"
-    assert state["expanded_pane"] == "left"
     assert state["active_tab"] == "notes"
     # Cleared (downstream of new audio).
     assert state["tx"] is None
     assert state["tx_edit"] == ""
     assert state["soap"] is None
-    assert state["soap_edit"] == ""
     assert state["soap_truncated"] is False
     assert state["is_editing"] is False
     assert state["subjective_edit"] == ""
@@ -62,17 +58,13 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="tx")
 
-    # Preserved (audio identity + transcript + orthogonal UI focus).
+    # Preserved.
     assert state["audio_bytes"] == b"abc"
-    assert state["audio_name"] == "a.wav"
-    assert state["audio_hash"] == "deadbeef"
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
-    assert state["expanded_pane"] == "left"
     assert state["active_tab"] == "notes"
     # Cleared (downstream of transcript edits).
     assert state["soap"] is None
-    assert state["soap_edit"] == ""
     assert state["soap_truncated"] is False
     assert state["is_editing"] is False
     assert state["subjective_edit"] == ""
@@ -89,18 +81,6 @@ def test_clear_downstream_state_unknown_stage_is_noop():
     clear_downstream_state(state, after="nonsense")
 
     assert state == before
-
-
-def test_clear_downstream_state_preserves_expanded_pane():
-    from app import clear_downstream_state
-
-    for after in ("audio", "tx"):
-        state = _fresh_state()
-        state["expanded_pane"] = "right"
-        clear_downstream_state(state, after=after)
-        assert state["expanded_pane"] == "right", (
-            f"clear_downstream_state(after={after!r}) clobbered expanded_pane"
-        )
 
 
 @pytest.mark.parametrize(
@@ -159,25 +139,6 @@ def test_derive_stage_label(state, expected):
 
 
 @pytest.mark.parametrize(
-    ("soap", "expected"),
-    [
-        (None, "Generate SOAP note"),
-        ("", "Generate SOAP note"),
-        ("S: patient reports headache…", "Regenerate SOAP"),
-    ],
-    ids=[
-        "no_soap_says_generate",
-        "empty_string_says_generate",
-        "with_soap_says_regenerate",
-    ],
-)
-def test_primary_action_label(soap, expected):
-    from app import primary_action_label
-
-    assert primary_action_label(soap) == expected
-
-
-@pytest.mark.parametrize(
     ("initial", "meta", "expected"),
     [
         (False, {"finish_reason": "length"}, True),
@@ -198,23 +159,8 @@ def test_update_truncation_flag(initial, meta, expected):
     assert state["soap_truncated"] is expected
 
 
-def test_expanded_pane_toggle_round_trip():
-    from app import INITIAL_STATE
-
-    state = dict(INITIAL_STATE)
-    assert state["expanded_pane"] is None
-
-    state["expanded_pane"] = "left"
-    assert state["expanded_pane"] == "left"
-
-    state["expanded_pane"] = "right"
-    assert state["expanded_pane"] == "right"
-
-    state["expanded_pane"] = None
-    assert state["expanded_pane"] is None
-
-
 def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
+    """Smoke test for the new shell: header + sidebar + controlled tabs."""
     monkeypatch.setenv("HF_TOKEN", "hf_test_value")
 
     mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
@@ -229,12 +175,23 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     at.run(timeout=30)
 
     assert not at.exception, f"app raised: {at.exception}"
-    assert len(at.file_uploader) == 1
-    assert at.file_uploader[0].label == "Upload a patient visit recording"
 
-    rendered_markdown = " ".join(md.value for md in at.markdown)
-    assert "Medical Scribe" in rendered_markdown
-    assert "Upload audio to begin" in rendered_markdown
+    # Header markdown contains "Medical Scribe".
+    rendered_md = " ".join(md.value for md in at.markdown)
+    assert "Medical Scribe" in rendered_md
+
+    # Sidebar has a `+ New session` button.
+    sidebar_button_labels = [b.label for b in at.sidebar.button]
+    assert any("New session" in label for label in sidebar_button_labels)
+
+    # Tab bar buttons render in the main area.
+    main_button_labels = [b.label for b in at.button]
+    assert "Transcript" in main_button_labels
+    assert "Notes" in main_button_labels
+
+    # Active tab defaults to Transcript — Notes-tab placeholder copy
+    # is NOT visible.
+    assert "No SOAP note yet" not in rendered_md
 
 
 def test_initial_state_includes_new_keys():

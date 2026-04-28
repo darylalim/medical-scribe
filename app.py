@@ -1,9 +1,16 @@
-"""Streamlit UI for the MedASR -> MedGemma SOAP pipeline."""
+"""Streamlit UI for the MedASR -> MedGemma SOAP pipeline.
+
+Sidebar + Transcript/Notes tabs. Live capture via st.audio_input; file
+upload as a secondary affordance. Notes tab renders the SOAP draft as
+four cards (Subjective / Objective / Assessment / Plan) with an
+explicit Edit mode. Copy to clipboard is the only export — nothing is
+written to disk."""
 
 from __future__ import annotations
 
 import hashlib
 import html
+import json
 import os
 import sys
 import traceback
@@ -20,8 +27,11 @@ import streamlit as st  # noqa: E402
 from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_ID,
+    assemble_soap,
+    format_for_clipboard,
     load_asr_pipeline,
     load_medgemma,
+    parse_soap_sections,
     pick_device,
     stream_soap,
     transcribe,
@@ -29,18 +39,30 @@ from medical_scribe import (  # noqa: E402
 
 ASR_MODEL = "google/medasr"
 MAX_UPLOAD_MB = 100
+
+SOAP_SECTIONS: tuple[str, ...] = ("Subjective", "Objective", "Assessment", "Plan")
+SECTION_KEY_MAP: dict[str, str] = {
+    "Subjective": "subjective_edit",
+    "Objective": "objective_edit",
+    "Assessment": "assessment_edit",
+    "Plan": "plan_edit",
+}
+
 INITIAL_STATE = {
+    # Audio
     "audio_bytes": None,
     "audio_name": None,
     "audio_hash": None,
+    # Transcript
     "tx": None,
     "tx_edit": "",
+    # SOAP — full markdown blob, source of truth
     "soap": None,
-    "soap_edit": "",
-    "expanded_pane": None,
     "soap_truncated": False,
+    # UI mode
     "active_tab": "transcript",
     "is_editing": False,
+    # Per-section edit buffers (populated on entry to edit mode)
     "subjective_edit": "",
     "objective_edit": "",
     "assessment_edit": "",
@@ -61,14 +83,14 @@ def reset_state() -> None:
 def clear_downstream_state(state: MutableMapping[str, object], after: str) -> None:
     """Enforce the spec's state invariants. `after` names the last valid stage.
 
-    `expanded_pane` and `active_tab` are intentionally not touched —
-    they're UI focus concerns, orthogonal to workflow stage.
+    `active_tab` is intentionally not touched — it's a UI focus concern,
+    orthogonal to workflow stage. `+ New session` is the only path that
+    resets it (via reset_state).
     """
     if after == "audio":
         state["tx"] = None
         state["tx_edit"] = ""
         state["soap"] = None
-        state["soap_edit"] = ""
         state["soap_truncated"] = False
         state["is_editing"] = False
         state["subjective_edit"] = ""
@@ -77,7 +99,6 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
         state["plan_edit"] = ""
     elif after == "tx":
         state["soap"] = None
-        state["soap_edit"] = ""
         state["soap_truncated"] = False
         state["is_editing"] = False
         state["subjective_edit"] = ""
@@ -109,7 +130,7 @@ def audio_mime_from_name(name: object) -> str | None:
 def derive_stage_label(state: Mapping[str, object]) -> str:
     """Header stage label, derived from session state.
 
-    The `_streaming` flag is set by the right-pane click handler before
+    The `_streaming` flag is set by the Generate click handler before
     streaming begins (via st.rerun), so it is available in session state
     when the header renders on the streaming pass.
     """
@@ -124,17 +145,39 @@ def derive_stage_label(state: Mapping[str, object]) -> str:
     return "SOAP ready"
 
 
-def primary_action_label(soap: object) -> str:
-    """Right-pane primary button label.
-
-    Truthy soap value -> regenerate; falsy -> generate (covers None and "").
-    """
-    return "Regenerate SOAP" if soap else "Generate SOAP note"
-
-
 def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str, object]) -> None:
     """Set state['soap_truncated'] based on streaming meta's finish_reason."""
     state["soap_truncated"] = meta.get("finish_reason") == "length"
+
+
+def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key: str) -> None:
+    """Render a Copy-to-clipboard button using the JavaScript Clipboard API.
+
+    Streamlit doesn't ship a native copy-to-clipboard widget, so we drop
+    into raw HTML/JS via `st.html`. Click triggers
+    `navigator.clipboard.writeText(text)` with a brief "✓ Copied" toast.
+    Does NOT trigger a Streamlit rerun — the click stays purely client-side.
+    """
+    payload = json.dumps(text)
+    safe_label = html.escape(label)
+    btn_style = (
+        "padding:0.45em 1.1em; border-radius:6px;"
+        " border:1px solid rgba(49,51,63,0.2);"
+        " background:#ff4b4b; color:white; cursor:pointer;"
+        " font-weight:500; font-size:14px;"
+    )
+    st.html(f"""
+    <button
+        id="{key}"
+        onclick="navigator.clipboard.writeText({payload}).then(() => {{
+            const t = document.getElementById('{key}');
+            const original = t.textContent;
+            t.textContent = '✓ Copied';
+            setTimeout(() => {{ t.textContent = original; }}, 1500);
+        }})"
+        style="{btn_style}"
+    >{safe_label}</button>
+    """)
 
 
 def require_hf_token() -> None:
@@ -162,27 +205,69 @@ def show_error(label: str, exc: BaseException) -> None:
 
 
 def _render_header() -> None:
-    """Top header bar: app title (left) + filename + stage label (right)."""
+    """Top header bar: app title (left) + stage label (right)."""
     cols = st.columns([3, 5])
     with cols[0]:
         st.markdown("### Medical Scribe")
     with cols[1]:
         stage_label = derive_stage_label(cast(Mapping[str, object], st.session_state))
-        filename = st.session_state["audio_name"] or "no audio uploaded"
         st.markdown(
             f"<div style='text-align:right; padding-top:8px; color:#666'>"
-            f"{html.escape(filename)} · <em>{html.escape(stage_label)}</em></div>",
+            f"<em>{html.escape(stage_label)}</em></div>",
             unsafe_allow_html=True,
         )
     st.divider()
 
 
-def _handle_upload(upload) -> bool:
-    """Validate and persist a new audio upload into session state.
+def _render_sidebar() -> None:
+    """Sidebar: only the `+ New session` button."""
+    with st.sidebar:
+        if st.button(
+            "+ New session", key="new_session_btn", type="primary", use_container_width=True
+        ):
+            reset_state()
+            st.rerun()
 
-    Uses hash-based 'is this actually new?' detection so reruns triggered
-    by other widgets don't re-transcribe the same audio. Returns True if
-    new audio was persisted, False otherwise.
+
+def _render_tab_bar() -> None:
+    """Two buttons styled as tabs. `active_tab` session-state key
+    decides which tab body the dispatcher renders.
+
+    Native st.tabs() is client-side only — the active tab cannot be
+    set from Python — so the Generate handler couldn't auto-switch
+    to Notes. Hand-rolled tabs solve that.
+    """
+    active = st.session_state["active_tab"]
+    cols = st.columns([1, 1, 6])
+    with cols[0]:
+        if st.button(
+            "Transcript",
+            key="tab_transcript_btn",
+            type="primary" if active == "transcript" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["active_tab"] = "transcript"
+            st.rerun()
+    with cols[1]:
+        if st.button(
+            "Notes",
+            key="tab_notes_btn",
+            type="primary" if active == "notes" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["active_tab"] = "notes"
+            st.rerun()
+    st.divider()
+
+
+def _handle_upload(upload) -> bool:
+    """Validate and persist a new audio capture (recorded or uploaded)
+    into session state.
+
+    Accepts the UploadedFile-compatible object returned by either
+    `st.audio_input` or `st.file_uploader`. SHA-256 hash detects "is
+    this actually new audio?" so unrelated reruns don't re-transcribe.
+    Returns True if new audio was persisted, False otherwise.
     """
     incoming_bytes = upload.getvalue()
     if len(incoming_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
@@ -192,51 +277,54 @@ def _handle_upload(upload) -> bool:
             f"{MAX_UPLOAD_MB} MB — please split long recordings."
         )
         st.stop()
+    incoming_name = getattr(upload, "name", "audio.wav")
     incoming_hash = hashlib.sha256(incoming_bytes).hexdigest()
     is_new_upload = (
-        upload.name != st.session_state["audio_name"]
+        incoming_name != st.session_state["audio_name"]
         or incoming_hash != st.session_state["audio_hash"]
     )
     if is_new_upload:
         st.session_state["audio_bytes"] = incoming_bytes
-        st.session_state["audio_name"] = upload.name
+        st.session_state["audio_name"] = incoming_name
         st.session_state["audio_hash"] = incoming_hash
         clear_downstream_state(cast(MutableMapping[str, object], st.session_state), after="audio")
         return True
     return False
 
 
-def _render_left_pane(asr_pipe) -> None:
-    """Left pane: audio uploader/player + transcript area, stage-aware."""
+def _render_transcript_tab(asr_pipe) -> None:
+    """Transcript tab: audio capture/upload + editable transcript +
+    Generate SOAP Note button. State-aware."""
     audio_bytes = st.session_state["audio_bytes"]
     tx = st.session_state["tx"]
     is_streaming = bool(st.session_state.get("_streaming"))
-    expanded = st.session_state["expanded_pane"]
 
-    title_cols = st.columns([5, 1])
-    with title_cols[0]:
-        st.markdown("**Transcript**")
-    # Expand toggle only after we have something to focus on (post-upload).
-    if audio_bytes is not None:
-        with title_cols[1]:
-            label = "⤡ collapse" if expanded == "left" else "⤢ expand"
-            if st.button(label, key="left_pane_toggle"):
-                st.session_state["expanded_pane"] = None if expanded == "left" else "left"
-                st.rerun()
-
-    # State A: no audio yet — uploader fills the pane.
+    # State A: no audio yet.
     if audio_bytes is None:
-        upload = st.file_uploader(
-            "Upload a patient visit recording",
-            type=["wav", "mp3", "flac", "m4a"],
-        )
-        if upload is not None:
-            if _handle_upload(upload):
+        cols = st.columns([1, 2, 1])
+        with cols[1]:
+            st.markdown("**Record this visit**")
+            recorded = st.audio_input(
+                "Click the mic to start, click again to stop. "
+                "Audio stays on this device — nothing is uploaded.",
+                key="audio_input_widget",
+            )
+            if recorded is not None and _handle_upload(recorded):
                 st.rerun()
-            return
+
+            st.write("")  # spacer
+            with st.expander("Or upload an existing recording"):
+                uploaded = st.file_uploader(
+                    "Audio file",
+                    type=["wav", "mp3", "flac", "m4a"],
+                    label_visibility="collapsed",
+                    key="file_uploader_widget",
+                )
+                if uploaded is not None and _handle_upload(uploaded):
+                    st.rerun()
         return
 
-    # States B-E: audio player at top.
+    # States B-E: audio captured. Audio player at top.
     mime = audio_mime_from_name(st.session_state["audio_name"])
     st.audio(audio_bytes, format=mime if mime is not None else "audio/wav")
 
@@ -262,28 +350,43 @@ def _render_left_pane(asr_pipe) -> None:
         disabled=is_streaming,
     )
 
+    # Generate button (idempotent — re-clicking re-runs the LLM).
+    cols = st.columns([4, 1])
+    with cols[1]:
+        if st.button(
+            "Generate SOAP Note →",
+            type="primary",
+            disabled=is_streaming,
+            key="generate_btn",
+            use_container_width=True,
+        ):
+            if not st.session_state["tx_edit"].strip():
+                st.warning(
+                    "Transcript is empty — please provide or correct the "
+                    "transcription before generating a SOAP note."
+                )
+                return
+            # New generation: discard any in-progress edits.
+            st.session_state["is_editing"] = False
+            st.session_state["soap_truncated"] = False
+            for key in SECTION_KEY_MAP.values():
+                st.session_state[key] = ""
+            st.session_state["active_tab"] = "notes"
+            st.session_state["_streaming"] = True
+            st.rerun()
 
-def _render_right_pane(model, tokenizer) -> None:
-    """Right pane: SOAP placeholder/streaming/editable area, stage-aware."""
+
+def _render_notes_tab(model, tokenizer) -> None:
+    """Notes tab: stage-aware. Placeholder → streaming cards →
+    read-mode cards → edit-mode textareas."""
     audio_bytes = st.session_state["audio_bytes"]
     tx = st.session_state["tx"]
     soap = st.session_state["soap"]
-    expanded = st.session_state["expanded_pane"]
-
-    title_cols = st.columns([5, 1])
-    with title_cols[0]:
-        st.markdown("**SOAP note**")
-    # Expand toggle only after upload (consistent with left pane).
-    if audio_bytes is not None:
-        with title_cols[1]:
-            label = "⤡ collapse" if expanded == "right" else "⤢ expand"
-            if st.button(label, key="right_pane_toggle"):
-                st.session_state["expanded_pane"] = None if expanded == "right" else "right"
-                st.rerun()
+    is_streaming = bool(st.session_state.get("_streaming"))
 
     # State A: no audio yet.
     if audio_bytes is None:
-        st.markdown("_Upload audio to begin._")
+        st.markdown("_No SOAP note yet — record or upload audio in the Transcript tab._")
         return
 
     # State B: transcribing.
@@ -291,34 +394,19 @@ def _render_right_pane(model, tokenizer) -> None:
         st.markdown("_Awaiting transcript…_")
         return
 
-    # Persistent truncation warning (visible whenever the flag is set).
-    if st.session_state.get("soap_truncated", False):
-        st.warning(
-            "The SOAP note reached the output token limit and may be incomplete. "
-            "Verify all four sections (Subjective, Objective, Assessment, Plan) "
-            "are present before signing or downloading."
-        )
-
     # State C: SOAP idle.
-    if soap is None and not st.session_state.get("_streaming"):
-        st.markdown("_Generate the SOAP note from the reviewed transcript._")
-        if st.button(primary_action_label(soap), type="primary"):
-            if not st.session_state["tx_edit"].strip():
-                st.warning(
-                    "Transcript is empty — please provide or correct the transcription "
-                    "before generating a SOAP note."
-                )
-                return
-            st.session_state["soap_truncated"] = False
-            st.session_state["_streaming"] = True
-            st.rerun()
+    if soap is None and not is_streaming:
+        st.markdown("_Click Generate from the Transcript tab to draft a SOAP note._")
         return
 
     # State D: streaming.
-    if st.session_state.get("_streaming"):
-        placeholder = st.empty()
+    if is_streaming:
+        cards_placeholder = st.empty()
+        status_placeholder = st.empty()
+        status_placeholder.markdown("_Generating…_")
         buf = ""
         meta: dict[str, object] = {}
+        last_complete_count = 0
         try:
             for chunk in stream_soap(
                 model,
@@ -328,44 +416,108 @@ def _render_right_pane(model, tokenizer) -> None:
                 meta=meta,
             ):
                 buf += chunk
-                placeholder.markdown(buf)
+                sections = parse_soap_sections(buf)
+                # A section is "complete" once a successor header appears.
+                # During streaming, all detected sections except the last are complete.
+                section_names = [n for n in SOAP_SECTIONS if n in sections]
+                complete_count = max(0, len(section_names) - 1)
+                if complete_count > last_complete_count:
+                    with cards_placeholder.container():
+                        for name in section_names[:complete_count]:
+                            with st.container(border=True):
+                                st.markdown(f"**{name.upper()}**")
+                                st.markdown(sections[name])
+                    last_complete_count = complete_count
         except Exception as exc:
-            placeholder.empty()
+            cards_placeholder.empty()
+            status_placeholder.empty()
             show_error("SOAP generation failed", exc)
             st.session_state["soap"] = None
-            st.session_state["soap_edit"] = ""
+            st.session_state["soap_truncated"] = False
             st.session_state["_streaming"] = False
             return
+
+        # Stream completed successfully. Persist and rerun to land in State E.
+        status_placeholder.empty()
+        cards_placeholder.empty()
         st.session_state["soap"] = buf
-        st.session_state["soap_edit"] = buf
         update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
         st.session_state["_streaming"] = False
         st.rerun()
 
-    # State E: SOAP ready, editable.
-    st.text_area(
-        "SOAP note",
-        key="soap_edit",
-        height=400,
-        label_visibility="collapsed",
-    )
-    action_cols = st.columns([2, 2, 1])
-    with action_cols[0]:
-        if st.button(primary_action_label(soap), type="primary", key="regen_btn"):
-            st.session_state["soap_truncated"] = False
-            st.session_state["_streaming"] = True
-            st.rerun()
-    with action_cols[1]:
-        st.download_button(
-            "Download .md",
-            data=st.session_state["soap_edit"],
-            file_name="soap_note.md",
-            mime="text/markdown",
+    # States E and E-edit: SOAP exists.
+    parsed = parse_soap_sections(soap or "")
+
+    # Persistent truncation warning.
+    if st.session_state.get("soap_truncated", False):
+        st.warning(
+            "The SOAP note reached the output token limit and may be incomplete. "
+            "Verify all four sections (Subjective, Objective, Assessment, Plan) "
+            "are present before copying."
         )
-    with action_cols[2]:
-        if st.button("Start over", key="reset_btn"):
-            reset_state()
-            st.rerun()
+
+    # Defensive fallback: model output didn't parse into all four sections.
+    expected = set(SOAP_SECTIONS)
+    if expected - set(parsed):
+        st.warning(
+            "The SOAP note couldn't be fully parsed into sections — "
+            "review carefully before copying."
+        )
+
+    if st.session_state["is_editing"]:
+        # State E-edit: textareas in cards.
+        for name in SOAP_SECTIONS:
+            with st.container(border=True):
+                st.markdown(f"**{name.upper()}**")
+                st.text_area(
+                    f"{name} edit",
+                    key=SECTION_KEY_MAP[name],
+                    height=120,
+                    label_visibility="collapsed",
+                )
+
+        # Action row: Done · Copy to clipboard.
+        cols = st.columns([1, 2, 5])
+        with cols[0]:
+            if st.button("Done", key="done_btn", use_container_width=True):
+                edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
+                st.session_state["soap"] = assemble_soap(edits)
+                st.session_state["is_editing"] = False
+                st.rerun()
+        with cols[1]:
+            edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
+            copy_to_clipboard_button(
+                format_for_clipboard(edits),
+                key="copy_btn_edit",
+            )
+    else:
+        # State E: read-mode cards.
+        for name in SOAP_SECTIONS:
+            if name in parsed:
+                with st.container(border=True):
+                    st.markdown(f"**{name.upper()}**")
+                    st.markdown(parsed[name])
+
+        # Fallback "Other" card if no recognised sections at all.
+        if not parsed and soap:
+            with st.container(border=True):
+                st.markdown("**OTHER**")
+                st.markdown(soap)
+
+        # Action row: Edit · Copy to clipboard.
+        cols = st.columns([1, 2, 5])
+        with cols[0]:
+            if st.button("Edit", key="edit_btn", use_container_width=True):
+                # Populate edit buffers from current parsed soap.
+                for name in SOAP_SECTIONS:
+                    st.session_state[SECTION_KEY_MAP[name]] = parsed.get(name, "")
+                st.session_state["is_editing"] = True
+                st.rerun()
+        with cols[1]:
+            copy_to_clipboard_button(
+                format_for_clipboard(parsed),
+                key="copy_btn_read",
+            )
 
 
 def main() -> None:
@@ -373,8 +525,8 @@ def main() -> None:
     init_state()
     require_hf_token()
 
-    # Eager model load so warmup happens once and any error surfaces before the user uploads.
-    # `@st.cache_resource` on _asr/_llm already makes subsequent reruns instant.
+    # Eager model load — surface any error before the user uploads.
+    # @st.cache_resource on _asr/_llm makes subsequent reruns instant.
     with st.spinner("Loading models (first run downloads ~14 GB; subsequent runs are instant)…"):
         try:
             asr_pipe = _asr()
@@ -388,18 +540,13 @@ def main() -> None:
             st.stop()
 
     _render_header()
+    _render_sidebar()
+    _render_tab_bar()
 
-    expanded = st.session_state["expanded_pane"]
-    if expanded == "left":
-        _render_left_pane(asr_pipe)
-    elif expanded == "right":
-        _render_right_pane(model, tokenizer)
+    if st.session_state["active_tab"] == "transcript":
+        _render_transcript_tab(asr_pipe)
     else:
-        cols = st.columns([1, 1])
-        with cols[0]:
-            _render_left_pane(asr_pipe)
-        with cols[1]:
-            _render_right_pane(model, tokenizer)
+        _render_notes_tab(model, tokenizer)
 
 
 if __name__ == "__main__":
