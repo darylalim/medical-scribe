@@ -22,6 +22,12 @@ def _fresh_state() -> dict:
         "soap_edit": "edited soap",
         "expanded_pane": "left",
         "soap_truncated": True,
+        "active_tab": "notes",
+        "is_editing": True,
+        "subjective_edit": "edited s",
+        "objective_edit": "edited o",
+        "assessment_edit": "edited a",
+        "plan_edit": "edited p",
     }
 
 
@@ -36,12 +42,18 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     assert state["audio_name"] == "a.wav"
     assert state["audio_hash"] == "deadbeef"
     assert state["expanded_pane"] == "left"
+    assert state["active_tab"] == "notes"
     # Cleared (downstream of new audio).
     assert state["tx"] is None
     assert state["tx_edit"] == ""
     assert state["soap"] is None
     assert state["soap_edit"] == ""
     assert state["soap_truncated"] is False
+    assert state["is_editing"] is False
+    assert state["subjective_edit"] == ""
+    assert state["objective_edit"] == ""
+    assert state["assessment_edit"] == ""
+    assert state["plan_edit"] == ""
 
 
 def test_clear_downstream_state_after_tx_wipes_only_soap():
@@ -57,10 +69,16 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
     assert state["expanded_pane"] == "left"
+    assert state["active_tab"] == "notes"
     # Cleared (downstream of transcript edits).
     assert state["soap"] is None
     assert state["soap_edit"] == ""
     assert state["soap_truncated"] is False
+    assert state["is_editing"] is False
+    assert state["subjective_edit"] == ""
+    assert state["objective_edit"] == ""
+    assert state["assessment_edit"] == ""
+    assert state["plan_edit"] == ""
 
 
 def test_clear_downstream_state_unknown_stage_is_noop():
@@ -217,3 +235,44 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     rendered_markdown = " ".join(md.value for md in at.markdown)
     assert "Medical Scribe" in rendered_markdown
     assert "Upload audio to begin" in rendered_markdown
+
+
+def test_initial_state_includes_new_keys():
+    """Locks the new session-state shape introduced by the
+    live-capture-and-tabs redesign."""
+    from app import INITIAL_STATE
+
+    assert INITIAL_STATE["active_tab"] == "transcript"
+    assert INITIAL_STATE["is_editing"] is False
+    assert INITIAL_STATE["subjective_edit"] == ""
+    assert INITIAL_STATE["objective_edit"] == ""
+    assert INITIAL_STATE["assessment_edit"] == ""
+    assert INITIAL_STATE["plan_edit"] == ""
+
+
+def test_active_tab_round_trips():
+    """Direct state assignment is the toggle mechanism — verify the
+    values we use round-trip cleanly through INITIAL_STATE iteration."""
+    from app import INITIAL_STATE
+
+    state = dict(INITIAL_STATE)
+    assert state["active_tab"] == "transcript"
+
+    state["active_tab"] = "notes"
+    assert state["active_tab"] == "notes"
+
+    state["active_tab"] = "transcript"
+    assert state["active_tab"] == "transcript"
+
+
+def test_is_editing_round_trips():
+    from app import INITIAL_STATE
+
+    state = dict(INITIAL_STATE)
+    assert state["is_editing"] is False
+
+    state["is_editing"] = True
+    assert state["is_editing"] is True
+
+    state["is_editing"] = False
+    assert state["is_editing"] is False
