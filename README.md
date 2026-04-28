@@ -6,7 +6,7 @@ Local-first pipeline for Apple Silicon:
 2. **Review** the transcript and fix any misheard terms.
 3. **Generate** a SOAP note draft with [MedGemma-27B](https://huggingface.co/mlx-community/medgemma-27b-text-it-4bit) (MLX 4-bit).
 
-Everything runs locally. Audio and generated notes stay in process memory — the only artifact written to disk is a Markdown file you download from the UI.
+Everything runs locally. Audio and generated notes stay in process memory; nothing is written to disk. Copy to clipboard is the only export path.
 
 ## Safety
 
@@ -76,6 +76,7 @@ medical_scribe/            # backend package (no streamlit)
   device.py                # pick_device
   llm.py                   # MedGemma loader + stream_soap
   prompts.py               # SOAP system prompt + message formatter
+  soap_sections.py         # parse / assemble / clipboard-format SOAP markdown
 app.py                     # Streamlit UI (single entry point)
 .streamlit/config.toml     # server config (maxUploadSize = 100 MB)
 tests/
@@ -86,6 +87,7 @@ tests/
   test_integration.py      # gated by @pytest.mark.integration
   test_llm.py              # load_medgemma + stream_soap
   test_prompts.py          # SOAP prompt + format_soap_messages
+  test_soap_sections.py    # parse_soap_sections + assemble_soap + format_for_clipboard
 ```
 
 ## Development
@@ -112,7 +114,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # 46 unit tests
+uv run pytest                                             # ~74 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```

@@ -13,7 +13,7 @@ Local-first pipeline for Apple Silicon. Live-capture or upload a physician-patie
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
 - `app.py` — Streamlit UI: sidebar (with `+ New session`) + main area with Transcript / Notes tabs. The only file that imports `streamlit`. Six-state state machine (A: empty → B: transcribing → C: transcript ready → D: streaming → E: SOAP ready → E-edit: editing).
 - `.streamlit/config.toml` — server config (caps upload at `maxUploadSize = 100` MB).
-- `tests/` — ~64 unit tests + 1 gated integration test.
+- `tests/` — ~74 unit tests + 1 gated integration test.
 
 ## Commands
 
@@ -37,6 +37,8 @@ Local-first pipeline for Apple Silicon. Live-capture or upload a physician-patie
 - `load_medgemma()` must register `<end_of_turn>` as a stop token via `tokenizer.add_eos_token("<end_of_turn>")`. MLX-community Gemma quants default stop tokens to `{<eos>}` only; without this, `stream_generate` runs to `max_tokens` and the model loops on post-hoc "thought" scaffolding.
 - `medical_scribe/__init__.py` re-exports the backend's public API; `__all__` is the canonical surface and `tests/test_init.py` keeps it in sync with the defining modules.
 - The `Generate SOAP Note` button on the Transcript tab is **idempotent** — clicking it post-SOAP discards in-progress edits and re-runs against the current transcript. There is no separate Regenerate button.
+- Editable `st.text_area` widgets in conditionally-rendered tabs (transcript on the Transcript tab; per-section buffers in Notes-tab edit mode) use the `value=` + manual `st.session_state` sync pattern, **not** `key=`. Streamlit cleans up widget-managed session-state keys on unmount, so a `key=`-bound text area loses its value the moment its parent tab becomes inactive — silently wiping `tx_edit` and the four `<section>_edit` buffers on tab switches.
+- The Copy-to-clipboard button uses `streamlit.components.v1.html` (iframe-rendered, JS executes reliably, has `clipboard-write` permission), **not** `st.html` — the latter strips inline event handlers in current Streamlit versions, causing silent click failures.
 
 ## Gated models
 
