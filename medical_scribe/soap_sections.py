@@ -35,3 +35,18 @@ def parse_soap_sections(text: str) -> dict[str, str]:
         body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         sections[name] = text[body_start:body_end].strip()
     return sections
+
+
+def assemble_soap(sections: dict[str, str]) -> str:
+    """Inverse of `parse_soap_sections`. Produces canonical
+    `## Subjective\\n<body>\\n\\n## Objective\\n…` markdown.
+
+    Sections missing from the input dict are skipped (no empty
+    `## Foo\\n` blocks). Order follows SOAP_SECTIONS regardless of
+    insertion order in the input dict. Bodies are preserved verbatim.
+    """
+    blocks: list[str] = []
+    for name in SOAP_SECTIONS:
+        if name in sections:
+            blocks.append(f"## {name}\n{sections[name]}\n")
+    return "\n".join(blocks)
