@@ -27,3 +27,10 @@ def test_format_soap_messages_embeds_transcript_in_user_message():
     msgs = format_soap_messages(transcript)
 
     assert transcript in msgs[1]["content"]
+
+
+def test_system_prompt_mandates_exact_section_headers():
+    """Catches removal AND capitalisation drift on the H2 markers
+    that medical_scribe.soap_sections.parse_soap_sections splits on."""
+    for header in ("## Subjective", "## Objective", "## Assessment", "## Plan"):
+        assert header in SOAP_SYSTEM_PROMPT, f"missing literal {header!r}"
