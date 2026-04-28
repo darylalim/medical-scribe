@@ -205,6 +205,7 @@ def test_initial_state_includes_new_keys():
     assert INITIAL_STATE["objective_edit"] == ""
     assert INITIAL_STATE["assessment_edit"] == ""
     assert INITIAL_STATE["plan_edit"] == ""
+    assert INITIAL_STATE["_streaming"] is False
 
 
 def test_active_tab_round_trips():
@@ -312,3 +313,26 @@ def test_escape_text_for_inline_script_empty_string():
     from app import escape_text_for_inline_script
 
     assert escape_text_for_inline_script("") == '""'
+
+
+def test_section_key_map_covers_all_soap_sections():
+    """Drift guard: SECTION_KEY_MAP must have one entry per SOAP_SECTIONS
+    name. Catches the case where SOAP_SECTIONS gains a section but the
+    derivation breaks. Currently SECTION_KEY_MAP is built via comprehension
+    over SOAP_SECTIONS, so this is also a smoke check on the derivation."""
+    from app import SECTION_KEY_MAP, SOAP_SECTIONS
+
+    assert set(SECTION_KEY_MAP.keys()) == set(SOAP_SECTIONS)
+
+
+def test_initial_state_keys_match_section_key_map():
+    """Every value in SECTION_KEY_MAP must be a key in INITIAL_STATE,
+    or reset_state() / clear_downstream_state() will silently miss them.
+    Catches the case where SOAP_SECTIONS / SECTION_KEY_MAP grows but the
+    INITIAL_STATE entries weren't added."""
+    from app import INITIAL_STATE, SECTION_KEY_MAP
+
+    for buffer_key in SECTION_KEY_MAP.values():
+        assert buffer_key in INITIAL_STATE, (
+            f"SECTION_KEY_MAP value {buffer_key!r} is missing from INITIAL_STATE"
+        )

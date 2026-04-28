@@ -149,3 +149,17 @@ def test_format_for_clipboard_preserves_body_verbatim():
     body = "line 1\n\nline 2\n"
     text = format_for_clipboard({"Subjective": body})
     assert body in text
+
+
+def test_parse_soap_sections_duplicate_headers_last_wins():
+    """Document the policy: if the model emits a section header twice
+    (drift / regression), the second occurrence wins and the first body
+    is silently lost. Matches dict-key insertion semantics — the parser
+    overwrites earlier keys.
+
+    Acceptable for a draft-clinical-tool but should be a conscious choice,
+    not surprising behaviour. A future regression that flips this policy
+    would be caught immediately by this test."""
+    text = "## Subjective\nfirst body\n## Subjective\nsecond body\n"
+    sections = parse_soap_sections(text)
+    assert sections == {"Subjective": "second body"}

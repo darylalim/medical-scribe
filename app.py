@@ -12,7 +12,6 @@ import hashlib
 import html
 import json
 import os
-import re
 import sys
 import traceback
 from collections.abc import Mapping, MutableMapping
@@ -29,6 +28,7 @@ import streamlit.components.v1 as components  # noqa: E402
 from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_ID,
+    SECTION_HEADER_RE,
     SOAP_SECTIONS,
     assemble_soap,
     format_for_clipboard,
@@ -43,17 +43,11 @@ from medical_scribe import (  # noqa: E402
 ASR_MODEL = "google/medasr"
 MAX_UPLOAD_MB = 100
 
-SECTION_KEY_MAP: dict[str, str] = {
-    "Subjective": "subjective_edit",
-    "Objective": "objective_edit",
-    "Assessment": "assessment_edit",
-    "Plan": "plan_edit",
-}
-
-_FIRST_SECTION_HEADER_RE = re.compile(
-    r"^## (?:Subjective|Objective|Assessment|Plan)\s*$",
-    re.MULTILINE,
-)
+# Derived from SOAP_SECTIONS so adding a section in soap_sections.py
+# auto-propagates the per-section edit-buffer key. The matching INITIAL_STATE
+# entries below still need a manual addition; tests/test_app.py's
+# test_initial_state_keys_match_section_key_map catches that drift.
+SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP_SECTIONS}
 
 INITIAL_STATE = {
     # Audio
@@ -74,6 +68,10 @@ INITIAL_STATE = {
     "objective_edit": "",
     "assessment_edit": "",
     "plan_edit": "",
+    # Streaming flag — set when SOAP generation is in progress.
+    # Read via st.session_state.get(...) elsewhere; including the default
+    # here ensures reset_state() clears it on `+ New session`.
+    "_streaming": False,
 }
 
 
@@ -174,7 +172,7 @@ def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:
         return ""
     if not parsed:
         return soap.strip()
-    match = _FIRST_SECTION_HEADER_RE.search(soap)
+    match = SECTION_HEADER_RE.search(soap)
     return soap[: match.start()].strip() if match else ""
 
 
@@ -548,16 +546,16 @@ def _render_notes_tab(model, tokenizer) -> None:
                 )
                 st.session_state[buffer_key] = new_value
 
-        # Action row: Done · Copy to clipboard.
+        # Action row: Done · Copy to clipboard. `edits` is read once per
+        # render and used by both buttons.
+        edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
         cols = st.columns([1, 2, 5])
         with cols[0]:
             if st.button("Done", key="done_btn", use_container_width=True):
-                edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
                 st.session_state["soap"] = assemble_soap(edits)
                 st.session_state["is_editing"] = False
                 st.rerun()
         with cols[1]:
-            edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
             copy_to_clipboard_button(
                 format_for_clipboard(edits),
                 key="copy_btn_edit",

@@ -11,7 +11,7 @@ import re
 
 SOAP_SECTIONS: tuple[str, ...] = ("Subjective", "Objective", "Assessment", "Plan")
 
-_HEADER_RE = re.compile(
+SECTION_HEADER_RE = re.compile(
     r"^## (Subjective|Objective|Assessment|Plan)\s*$",
     re.MULTILINE,
 )
@@ -25,7 +25,7 @@ def parse_soap_sections(text: str) -> dict[str, str]:
     unexpected order; returns whatever it finds. Empty dict if no
     recognised headers are present.
     """
-    matches = list(_HEADER_RE.finditer(text))
+    matches = list(SECTION_HEADER_RE.finditer(text))
     if not matches:
         return {}
     sections: dict[str, str] = {}
