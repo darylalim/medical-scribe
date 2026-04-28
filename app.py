@@ -369,13 +369,18 @@ def _render_transcript_tab(asr_pipe) -> None:
         st.rerun()
 
     # States C / D / E: editable transcript (disabled during streaming).
-    st.text_area(
+    # Use value= + manual sync rather than key= so the value persists
+    # across tab switches. Streamlit clears widget-managed keys when the
+    # widget unmounts (e.g. when the user navigates to the Notes tab),
+    # which would silently wipe the transcript on return.
+    new_tx_edit = st.text_area(
         "Transcript",
-        key="tx_edit",
+        value=st.session_state["tx_edit"],
         height=400,
         label_visibility="collapsed",
         disabled=is_streaming,
     )
+    st.session_state["tx_edit"] = new_tx_edit
 
     # Generate button (idempotent — re-clicking re-runs the LLM).
     cols = st.columns([4, 1])
@@ -494,15 +499,22 @@ def _render_notes_tab(model, tokenizer) -> None:
 
     if st.session_state["is_editing"]:
         # State E-edit: textareas in cards.
+        # Use value= + manual sync rather than key= so the buffer values
+        # persist across tab switches and edit-mode toggles. Same fix as
+        # the transcript text area in _render_transcript_tab — Streamlit
+        # clears widget-managed keys on unmount, which would silently
+        # wipe in-progress edits if the user switches tabs mid-edit.
         for name in SOAP_SECTIONS:
             with st.container(border=True):
                 st.markdown(f"**{name.upper()}**")
-                st.text_area(
+                buffer_key = SECTION_KEY_MAP[name]
+                new_value = st.text_area(
                     f"{name} edit",
-                    key=SECTION_KEY_MAP[name],
+                    value=st.session_state.get(buffer_key, ""),
                     height=120,
                     label_visibility="collapsed",
                 )
+                st.session_state[buffer_key] = new_value
 
         # Action row: Done · Copy to clipboard.
         cols = st.columns([1, 2, 5])
