@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import streamlit as st  # noqa: E402
+import streamlit.components.v1 as components  # noqa: E402
 
 from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
@@ -159,12 +160,21 @@ def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str
 def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key: str) -> None:
     """Render a Copy-to-clipboard button using the JavaScript Clipboard API.
 
-    Streamlit doesn't ship a native copy-to-clipboard widget, so we drop
-    into raw HTML/JS via `st.html`. Click triggers
-    `navigator.clipboard.writeText(text)` with a brief "✓ Copied" toast.
-    Does NOT trigger a Streamlit rerun — the click stays purely client-side.
+    Uses `streamlit.components.v1.html` (iframe-based component) rather
+    than `st.html` because the latter strips/sanitizes inline event
+    handlers in current Streamlit versions, causing silent click
+    failures. The component iframe runs JavaScript reliably and Streamlit
+    grants it `clipboard-write` permission by default.
+
+    Click writes `text` to the clipboard via `navigator.clipboard.writeText`,
+    flashes a "✓ Copied" toast for 1.5s on success, and surfaces a "✗ Copy
+    failed" toast plus a console.error on failure (so future regressions
+    are visible).
     """
-    payload = html.escape(json.dumps(text))
+    # JSON encoding handles JS string escaping (quotes, newlines).
+    # Replace "</" with "<\/" so a `</script>` substring in `text` cannot
+    # prematurely terminate the inline <script> block.
+    payload = json.dumps(text).replace("</", "<\\/")
     safe_label = html.escape(label)
     btn_style = (
         "padding:0.45em 1.1em; border-radius:6px;"
@@ -172,18 +182,29 @@ def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key
         " background:#ff4b4b; color:white; cursor:pointer;"
         " font-weight:500; font-size:14px;"
     )
-    st.html(f"""
-    <button
-        id="{key}"
-        onclick="navigator.clipboard.writeText({payload}).then(() => {{
-            const t = document.getElementById('{key}');
-            const original = t.textContent;
-            t.textContent = '✓ Copied';
-            setTimeout(() => {{ t.textContent = original; }}, 1500);
-        }})"
-        style="{btn_style}"
-    >{safe_label}</button>
-    """)
+    components.html(
+        f"""
+<button id="{key}" style="{btn_style}">{safe_label}</button>
+<script>
+  (function() {{
+    const btn = document.getElementById("{key}");
+    btn.addEventListener("click", function() {{
+      navigator.clipboard.writeText({payload}).then(function() {{
+        const original = btn.textContent;
+        btn.textContent = "\u2713 Copied";
+        setTimeout(function() {{ btn.textContent = original; }}, 1500);
+      }}).catch(function(err) {{
+        console.error("Copy to clipboard failed:", err);
+        const original = btn.textContent;
+        btn.textContent = "\u2717 Copy failed";
+        setTimeout(function() {{ btn.textContent = original; }}, 2000);
+      }});
+    }});
+  }})();
+</script>
+""",
+        height=50,
+    )
 
 
 def require_hf_token() -> None:
