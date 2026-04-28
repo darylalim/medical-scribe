@@ -50,3 +50,22 @@ def assemble_soap(sections: dict[str, str]) -> str:
         if name in sections:
             blocks.append(f"## {name}\n{sections[name]}\n")
     return "\n".join(blocks)
+
+
+def format_for_clipboard(sections: dict[str, str]) -> str:
+    """Plain-text-with-caps export format for the clipboard (and
+    eventually EHR-paste) action.
+
+    Real EHRs render the clinical-notes field as plain text — markdown
+    headers like `## Subjective` would appear verbatim. Capitalised
+    section labels read clearly on paste and match longstanding
+    chart-note conventions.
+
+    Sections missing from the input dict are skipped. Order follows
+    SOAP_SECTIONS regardless of insertion order in the input dict.
+    """
+    blocks: list[str] = []
+    for name in SOAP_SECTIONS:
+        if name in sections:
+            blocks.append(f"{name.upper()}\n{sections[name]}\n")
+    return "\n".join(blocks)

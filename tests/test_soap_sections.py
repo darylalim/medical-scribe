@@ -119,3 +119,35 @@ def test_round_trip_parse_assemble_parse_is_noop():
     reassembled = assemble_soap(parsed_once)
     parsed_twice = parse_soap_sections(reassembled)
     assert parsed_twice == parsed_once
+
+
+from medical_scribe.soap_sections import format_for_clipboard
+
+
+def test_format_for_clipboard_canonical_format_all_four():
+    text = format_for_clipboard(
+        {
+            "Subjective": "s body",
+            "Objective": "o body",
+            "Assessment": "a body",
+            "Plan": "p body",
+        }
+    )
+    assert text == (
+        "SUBJECTIVE\ns body\n\nOBJECTIVE\no body\n\nASSESSMENT\na body\n\nPLAN\np body\n"
+    )
+
+
+def test_format_for_clipboard_skips_missing_sections():
+    text = format_for_clipboard({"Subjective": "s", "Plan": "p"})
+    assert text == "SUBJECTIVE\ns\n\nPLAN\np\n"
+
+
+def test_format_for_clipboard_empty_dict_returns_empty_string():
+    assert format_for_clipboard({}) == ""
+
+
+def test_format_for_clipboard_preserves_body_verbatim():
+    body = "line 1\n\nline 2\n"
+    text = format_for_clipboard({"Subjective": body})
+    assert body in text
