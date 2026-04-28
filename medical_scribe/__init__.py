@@ -14,6 +14,7 @@ from medical_scribe.llm import (
     stream_soap,
 )
 from medical_scribe.soap_sections import (
+    SOAP_SECTIONS,
     assemble_soap,
     format_for_clipboard,
     parse_soap_sections,
@@ -22,6 +23,7 @@ from medical_scribe.soap_sections import (
 __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_MODEL_ID",
+    "SOAP_SECTIONS",
     "assemble_soap",
     "format_for_clipboard",
     "load_asr_pipeline",

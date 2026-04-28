@@ -12,6 +12,7 @@ import hashlib
 import html
 import json
 import os
+import re
 import sys
 import traceback
 from collections.abc import Mapping, MutableMapping
@@ -27,6 +28,7 @@ import streamlit as st  # noqa: E402
 from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_ID,
+    SOAP_SECTIONS,
     assemble_soap,
     format_for_clipboard,
     load_asr_pipeline,
@@ -40,13 +42,17 @@ from medical_scribe import (  # noqa: E402
 ASR_MODEL = "google/medasr"
 MAX_UPLOAD_MB = 100
 
-SOAP_SECTIONS: tuple[str, ...] = ("Subjective", "Objective", "Assessment", "Plan")
 SECTION_KEY_MAP: dict[str, str] = {
     "Subjective": "subjective_edit",
     "Objective": "objective_edit",
     "Assessment": "assessment_edit",
     "Plan": "plan_edit",
 }
+
+_FIRST_SECTION_HEADER_RE = re.compile(
+    r"^## (?:Subjective|Objective|Assessment|Plan)\s*$",
+    re.MULTILINE,
+)
 
 INITIAL_STATE = {
     # Audio
@@ -499,11 +505,23 @@ def _render_notes_tab(model, tokenizer) -> None:
                     st.markdown(f"**{name.upper()}**")
                     st.markdown(parsed[name])
 
-        # Fallback "Other" card if no recognised sections at all.
-        if not parsed and soap:
-            with st.container(border=True):
-                st.markdown("**OTHER**")
-                st.markdown(soap)
+        # "Other" card surfaces text the parser didn't recognise as a SOAP section.
+        # Two cases land here:
+        #   - parser returned no sections: the entire soap is the remainder.
+        #   - parser returned a partial set: preamble before the first ## header
+        #     is the remainder. (Per the parser's greedy header-to-header semantics,
+        #     mid-buffer content is always absorbed by the preceding section, so
+        #     preamble is the only place stray text can land.)
+        if soap:
+            if not parsed:
+                remainder = soap.strip()
+            else:
+                first_header = _FIRST_SECTION_HEADER_RE.search(soap)
+                remainder = soap[: first_header.start()].strip() if first_header else ""
+            if remainder:
+                with st.container(border=True):
+                    st.markdown("**OTHER**")
+                    st.markdown(remainder)
 
         # Action row: Edit · Copy to clipboard.
         cols = st.columns([1, 2, 5])

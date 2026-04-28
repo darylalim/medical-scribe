@@ -14,6 +14,7 @@ def test_package_reexports_match_module_level_definitions():
     expected = {
         "DEFAULT_MAX_TOKENS": llm.DEFAULT_MAX_TOKENS,
         "DEFAULT_MODEL_ID": llm.DEFAULT_MODEL_ID,
+        "SOAP_SECTIONS": soap_sections.SOAP_SECTIONS,
         "assemble_soap": soap_sections.assemble_soap,
         "format_for_clipboard": soap_sections.format_for_clipboard,
         "load_asr_pipeline": asr.load_asr_pipeline,
