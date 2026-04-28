@@ -13,12 +13,20 @@ from medical_scribe.llm import (
     load_medgemma,
     stream_soap,
 )
+from medical_scribe.soap_sections import (
+    assemble_soap,
+    format_for_clipboard,
+    parse_soap_sections,
+)
 
 __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_MODEL_ID",
+    "assemble_soap",
+    "format_for_clipboard",
     "load_asr_pipeline",
     "load_medgemma",
+    "parse_soap_sections",
     "pick_device",
     "stream_soap",
     "transcribe",
