@@ -157,6 +157,38 @@ def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str
     state["soap_truncated"] = meta.get("finish_reason") == "length"
 
 
+def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:
+    """Return text in `soap` that isn't part of any recognised SOAP section.
+
+    Two cases produce a non-empty remainder:
+    - `parsed` is empty (no `## Subjective`/`## Objective`/`## Assessment`/
+      `## Plan` headers found in `soap`): the entire `soap` (stripped).
+    - `parsed` is non-empty: any preamble before the first recognised H2
+      header (stripped). Per `parse_soap_sections`'s greedy header-to-header
+      semantics, mid-buffer content is always absorbed by the preceding
+      section, so preamble is the only place stray text can land.
+
+    Empty/None input returns "".
+    """
+    if not soap:
+        return ""
+    if not parsed:
+        return soap.strip()
+    match = _FIRST_SECTION_HEADER_RE.search(soap)
+    return soap[: match.start()].strip() if match else ""
+
+
+def escape_text_for_inline_script(text: str) -> str:
+    """JSON-encode `text` for safe inline JavaScript, plus replace `</`
+    with `<\\/` so a `</script>` substring inside `text` cannot prematurely
+    close an enclosing `<script>` tag.
+
+    Used by `copy_to_clipboard_button` to embed user-controlled SOAP content
+    in a `<script>` block via `streamlit.components.v1.html`.
+    """
+    return json.dumps(text).replace("</", "<\\/")
+
+
 def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key: str) -> None:
     """Render a Copy-to-clipboard button using the JavaScript Clipboard API.
 
@@ -174,7 +206,7 @@ def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key
     # JSON encoding handles JS string escaping (quotes, newlines).
     # Replace "</" with "<\/" so a `</script>` substring in `text` cannot
     # prematurely terminate the inline <script> block.
-    payload = json.dumps(text).replace("</", "<\\/")
+    payload = escape_text_for_inline_script(text)
     safe_label = html.escape(label)
     btn_style = (
         "padding:0.45em 1.1em; border-radius:6px;"
@@ -539,22 +571,11 @@ def _render_notes_tab(model, tokenizer) -> None:
                     st.markdown(parsed[name])
 
         # "Other" card surfaces text the parser didn't recognise as a SOAP section.
-        # Two cases land here:
-        #   - parser returned no sections: the entire soap is the remainder.
-        #   - parser returned a partial set: preamble before the first ## header
-        #     is the remainder. (Per the parser's greedy header-to-header semantics,
-        #     mid-buffer content is always absorbed by the preceding section, so
-        #     preamble is the only place stray text can land.)
-        if soap:
-            if not parsed:
-                remainder = soap.strip()
-            else:
-                first_header = _FIRST_SECTION_HEADER_RE.search(soap)
-                remainder = soap[: first_header.start()].strip() if first_header else ""
-            if remainder:
-                with st.container(border=True):
-                    st.markdown("**OTHER**")
-                    st.markdown(remainder)
+        remainder = compute_unparsed_remainder(soap, parsed)
+        if remainder:
+            with st.container(border=True):
+                st.markdown("**OTHER**")
+                st.markdown(remainder)
 
         # Action row: Edit · Copy to clipboard.
         cols = st.columns([1, 2, 5])

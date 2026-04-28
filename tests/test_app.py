@@ -233,3 +233,82 @@ def test_is_editing_round_trips():
 
     state["is_editing"] = False
     assert state["is_editing"] is False
+
+
+@pytest.mark.parametrize(
+    ("soap", "parsed", "expected"),
+    [
+        (None, {}, ""),
+        ("", {}, ""),
+        (
+            "Some unstructured prose with no headers.",
+            {},
+            "Some unstructured prose with no headers.",
+        ),
+        (
+            "## Subjective\nfoo\n## Plan\np\n",
+            {"Subjective": "foo", "Plan": "p"},
+            "",
+        ),
+        (
+            "preamble text\n\n## Subjective\nbody\n",
+            {"Subjective": "body"},
+            "preamble text",
+        ),
+        (
+            "\n\n  preamble  \n\n## Subjective\nbody\n",
+            {"Subjective": "body"},
+            "preamble",
+        ),
+        (
+            "## Plan\np body\n",
+            {"Plan": "p body"},
+            "",
+        ),
+    ],
+    ids=[
+        "none_soap_returns_empty",
+        "empty_soap_returns_empty",
+        "no_parsed_returns_full_soap_stripped",
+        "all_sections_no_preamble_returns_empty",
+        "preamble_before_first_header_returned",
+        "preamble_with_surrounding_whitespace_stripped",
+        "single_section_no_preamble_returns_empty",
+    ],
+)
+def test_compute_unparsed_remainder(soap, parsed, expected):
+    from app import compute_unparsed_remainder
+
+    assert compute_unparsed_remainder(soap, parsed) == expected
+
+
+def test_escape_text_for_inline_script_basic():
+    from app import escape_text_for_inline_script
+
+    assert escape_text_for_inline_script("hello world") == '"hello world"'
+
+
+def test_escape_text_for_inline_script_quotes_and_newlines():
+    from app import escape_text_for_inline_script
+
+    # JSON encoding handles JS string escaping for quotes and newlines.
+    assert (
+        escape_text_for_inline_script('Hello "world"\nNext line')
+        == '"Hello \\"world\\"\\nNext line"'
+    )
+
+
+def test_escape_text_for_inline_script_escapes_script_close_tag():
+    from app import escape_text_for_inline_script
+
+    # `</script>` substring must be escaped to `<\/script>` so it cannot
+    # prematurely close an enclosing <script> tag in the rendered HTML.
+    result = escape_text_for_inline_script("body with </script> tag")
+    assert "<\\/script>" in result
+    assert "</script>" not in result
+
+
+def test_escape_text_for_inline_script_empty_string():
+    from app import escape_text_for_inline_script
+
+    assert escape_text_for_inline_script("") == '""'
