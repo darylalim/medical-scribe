@@ -45,9 +45,9 @@ Uploads are capped at **100 MB** (`.streamlit/config.toml`). Split longer record
 
 The UI has a sidebar plus two main-area tabs:
 
-- **Sidebar** — `+ New session` button to reset state and start fresh.
+- **Sidebar** — `+ New session` button. Clicking with audio loaded opens a confirm dialog before discarding the current draft; with no audio it resets immediately.
 - **Transcript tab** — record audio in-browser via `st.audio_input`, or expand "Or upload an existing recording" to choose a `.wav` / `.mp3` / `.flac` / `.m4a` file. Once audio exists, the audio player and the editable transcript text area appear; the **Generate SOAP Note →** button at the bottom-right kicks off generation and auto-switches to the Notes tab.
-- **Notes tab** — the SOAP draft renders as four cards (Subjective / Objective / Assessment / Plan), one card per section. While the model streams, cards appear one at a time as each section completes; a "Generating…" indicator shows below until the last card lands. The action row at the bottom is `[Edit · Copy to clipboard]`.
+- **Notes tab** — the SOAP draft renders as four color-coded cards (Subjective / Objective / Assessment / Plan), each prefixed with a colored letter badge (S / O / A / P). While the model streams, cards appear one at a time as each section completes; an italic status line above the cards updates from "Generating…" to "Drafting Subjective…", "Drafting Objective…", and so on as each header is parsed. The action row at the bottom is `[Edit · Copy to clipboard]`.
 - **Edit mode** — clicking **Edit** turns each card into an editable text area in place; the action row becomes `[Done · Copy to clipboard]`. Done commits the edits back to the SOAP source. Copy can be clicked at any time, including mid-edit.
 
 Workflow:
@@ -114,7 +114,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # ~74 unit tests
+uv run pytest                                             # ~86 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```

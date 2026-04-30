@@ -13,7 +13,7 @@ Local-first pipeline for Apple Silicon. Live-capture or upload a physician-patie
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
 - `app.py` — Streamlit UI: sidebar (with `+ New session`) + main area with Transcript / Notes tabs. The only file that imports `streamlit`. Six-state state machine (A: empty → B: transcribing → C: transcript ready → D: streaming → E: SOAP ready → E-edit: editing).
 - `.streamlit/config.toml` — server config (caps upload at `maxUploadSize = 100` MB).
-- `tests/` — ~74 unit tests + 1 gated integration test.
+- `tests/` — ~86 unit tests + 1 gated integration test.
 
 ## Commands
 
@@ -39,6 +39,8 @@ Local-first pipeline for Apple Silicon. Live-capture or upload a physician-patie
 - The `Generate SOAP Note` button on the Transcript tab is **idempotent** — clicking it post-SOAP discards in-progress edits and re-runs against the current transcript. There is no separate Regenerate button.
 - Editable `st.text_area` widgets in conditionally-rendered tabs (transcript on the Transcript tab; per-section buffers in Notes-tab edit mode) use the `value=` + manual `st.session_state` sync pattern, **not** `key=`. Streamlit cleans up widget-managed session-state keys on unmount, so a `key=`-bound text area loses its value the moment its parent tab becomes inactive — silently wiping `tx_edit` and the four `<section>_edit` buffers on tab switches.
 - The Copy-to-clipboard button uses `streamlit.components.v1.html` (iframe-rendered, JS executes reliably, has `clipboard-write` permission), **not** `st.html` — the latter strips inline event handlers in current Streamlit versions, causing silent click failures.
+- The `+ New session` confirm dialog is gated on the `_show_reset_dialog` session-state flag, **not** on `@st.dialog`'s implicit open/close lifecycle. The button click sets the flag and triggers `st.rerun()`; the dialog's Cancel/Discard buttons clear the flag and rerun again. This keeps the modal open across the click-rerun and makes the bypass-in-State-A path explicit. `_show_reset_dialog` lives in `INITIAL_STATE` so `reset_state()` always closes a stale dialog as a side effect.
+- All three SOAP card render paths (streaming, read-mode, edit-mode) call the single `_render_section_header(name)` helper for the chip + name header. Iterate the visual there. `SECTION_COLORS` and `SECTION_INITIALS` must stay in sync with `SOAP_SECTIONS`; `tests/test_app.py::test_section_color_and_initial_maps_cover_all_soap_sections` catches drift.
 
 ## Gated models
 

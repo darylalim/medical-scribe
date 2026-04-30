@@ -194,6 +194,69 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     assert "No SOAP note yet" not in rendered_md
 
 
+def test_new_session_in_state_a_bypasses_dialog(mocker, monkeypatch):
+    """Regression guard for `_render_sidebar`'s State-A bypass:
+    when no audio is loaded there's nothing to lose, so clicking
+    + New session must NOT open the confirmation dialog. Catches the
+    case where the gating on `audio_bytes` is removed or inverted."""
+    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
+    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
+    mocker.patch(
+        "app.load_medgemma",
+        return_value=(mocker.MagicMock(), mocker.MagicMock()),
+    )
+
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py")
+    at.run(timeout=30)
+    assert not at.exception, f"boot raised: {at.exception}"
+
+    new_session_btn = next(b for b in at.sidebar.button if "New session" in b.label)
+    new_session_btn.click().run(timeout=30)
+    assert not at.exception, f"click raised: {at.exception}"
+
+    # Bypass path took effect: dialog flag stayed False, no dialog opens.
+    assert at.session_state["_show_reset_dialog"] is False
+
+
+def test_new_session_with_audio_opens_dialog(mocker, monkeypatch):
+    """Regression guard for the destructive-confirm half of
+    `_render_sidebar`: when audio is loaded the click must arm the
+    dialog (set `_show_reset_dialog=True`) and must NOT wipe state.
+    Catches the case where the bypass branch fires in both directions."""
+    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
+    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
+    mocker.patch(
+        "app.load_medgemma",
+        return_value=(mocker.MagicMock(), mocker.MagicMock()),
+    )
+
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py")
+    at.run(timeout=30)
+    assert not at.exception
+
+    # Inject a loaded-audio state and re-render so the sidebar sees it.
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+    at.run(timeout=30)
+    assert not at.exception
+
+    new_session_btn = next(b for b in at.sidebar.button if "New session" in b.label)
+    new_session_btn.click().run(timeout=30)
+    assert not at.exception, f"click raised: {at.exception}"
+
+    # Dialog armed; underlying state preserved (the dialog gates the wipe).
+    assert at.session_state["_show_reset_dialog"] is True
+    assert at.session_state["audio_bytes"] == b"fake-audio-bytes"
+    assert at.session_state["tx"] == "fake transcript"
+
+
 def test_initial_state_includes_new_keys():
     """Locks the new session-state shape introduced by the
     live-capture-and-tabs redesign."""
@@ -206,6 +269,15 @@ def test_initial_state_includes_new_keys():
     assert INITIAL_STATE["assessment_edit"] == ""
     assert INITIAL_STATE["plan_edit"] == ""
     assert INITIAL_STATE["_streaming"] is False
+
+
+def test_initial_state_includes_show_reset_dialog():
+    """Locks the new session-state key introduced by the +New session
+    confirmation dialog. Must default to False so reset_state() also
+    closes any open dialog as a side effect."""
+    from app import INITIAL_STATE
+
+    assert INITIAL_STATE["_show_reset_dialog"] is False
 
 
 def test_active_tab_round_trips():
@@ -336,3 +408,40 @@ def test_initial_state_keys_match_section_key_map():
         assert buffer_key in INITIAL_STATE, (
             f"SECTION_KEY_MAP value {buffer_key!r} is missing from INITIAL_STATE"
         )
+
+
+def test_section_color_and_initial_maps_cover_all_soap_sections():
+    """Drift guard: SECTION_COLORS / SECTION_INITIALS must have one entry
+    per SOAP_SECTIONS name. Catches the case where SOAP_SECTIONS gains
+    a section but the visual maps weren't updated — which would crash
+    _render_section_header at runtime."""
+    from app import SECTION_COLORS, SECTION_INITIALS, SOAP_SECTIONS
+
+    assert set(SECTION_COLORS.keys()) == set(SOAP_SECTIONS)
+    assert set(SECTION_INITIALS.keys()) == set(SOAP_SECTIONS)
+
+
+@pytest.mark.parametrize(
+    ("section_names", "expected"),
+    [
+        ([], "Generating…"),
+        (["Subjective"], "Drafting Subjective…"),
+        (["Subjective", "Objective"], "Drafting Objective…"),
+        (["Subjective", "Objective", "Assessment"], "Drafting Assessment…"),
+        (["Subjective", "Objective", "Assessment", "Plan"], "Drafting Plan…"),
+    ],
+    ids=[
+        "no_headers_yet",
+        "first_section_streaming",
+        "second_section_streaming",
+        "third_section_streaming",
+        "final_section_streaming",
+    ],
+)
+def test_streaming_status_label(section_names, expected):
+    """Status label is derived from the last detected section name —
+    that's the one currently being drafted. Empty list means we haven't
+    seen any section header yet (preamble / very early stream)."""
+    from app import streaming_status_label
+
+    assert streaming_status_label(section_names) == expected

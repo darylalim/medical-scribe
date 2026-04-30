@@ -49,6 +49,24 @@ MAX_UPLOAD_MB = 100
 # test_initial_state_keys_match_section_key_map catches that drift.
 SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP_SECTIONS}
 
+# Visual vocabulary for the SOAP cards. Both color *and* letter chip
+# are used together — color alone fails for ~8% of male users, and
+# clinicians scan fast. test_section_color_and_initial_maps_cover_all_soap_sections
+# catches drift if SOAP_SECTIONS grows a fifth section.
+SECTION_COLORS: dict[str, str] = {
+    "Subjective": "#3b82f6",  # blue
+    "Objective": "#10b981",  # green
+    "Assessment": "#f59e0b",  # amber
+    "Plan": "#8b5cf6",  # purple
+}
+
+SECTION_INITIALS: dict[str, str] = {
+    "Subjective": "S",
+    "Objective": "O",
+    "Assessment": "A",
+    "Plan": "P",
+}
+
 INITIAL_STATE = {
     # Audio
     "audio_bytes": None,
@@ -72,6 +90,11 @@ INITIAL_STATE = {
     # Read via st.session_state.get(...) elsewhere; including the default
     # here ensures reset_state() clears it on `+ New session`.
     "_streaming": False,
+    # Confirmation-dialog flag for `+ New session`. Persisting in
+    # session_state (rather than relying on @st.dialog's internal state)
+    # keeps the dialog open across the rerun that follows the button
+    # click, and makes the bypass-in-State-A path explicit.
+    "_show_reset_dialog": False,
 }
 
 
@@ -153,6 +176,19 @@ def derive_stage_label(state: Mapping[str, object]) -> str:
 def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str, object]) -> None:
     """Set state['soap_truncated'] based on streaming meta's finish_reason."""
     state["soap_truncated"] = meta.get("finish_reason") == "length"
+
+
+def streaming_status_label(section_names: list[str]) -> str:
+    """Label for the streaming-status placeholder.
+
+    The last detected section is the one currently being drafted — any
+    earlier section is "complete" the moment a successor header appears.
+    Empty list means we haven't seen any section header yet (preamble or
+    very early stream).
+    """
+    if not section_names:
+        return "Generating…"
+    return f"Drafting {section_names[-1]}…"
 
 
 def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:
@@ -261,6 +297,27 @@ def show_error(label: str, exc: BaseException) -> None:
     st.error(f"{label}: {type(exc).__name__}: {exc}")
 
 
+def _render_section_header(name: str) -> None:
+    """Colored letter-chip + section name. Reused by all three card render
+    paths (streaming, read, edit) so the visual stays consistent."""
+    color = SECTION_COLORS[name]
+    initial = SECTION_INITIALS[name]
+    st.markdown(
+        f"""
+<div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+  <span style="
+    display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; border-radius:6px;
+    background:{color}; color:white; font-weight:600; font-size:13px;
+    flex-shrink:0;
+  ">{html.escape(initial)}</span>
+  <span style="font-weight:600; letter-spacing:0.04em;">{html.escape(name.upper())}</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_header() -> None:
     """Top header bar: app title (left) + stage label (right)."""
     cols = st.columns([3, 5])
@@ -276,14 +333,51 @@ def _render_header() -> None:
     st.divider()
 
 
+@st.dialog("Discard this session?")
+def _confirm_new_session_dialog() -> None:
+    """Modal confirmation for `+ New session` when there's work to lose.
+
+    Driven by the `_show_reset_dialog` session-state flag rather than by
+    @st.dialog's internal lifecycle, so the dialog persists across the
+    button-click rerun and either button explicitly closes it.
+    """
+    st.write(
+        "Starting a new session will discard the current audio, "
+        "transcript, and SOAP draft. This cannot be undone."
+    )
+    cols = st.columns(2)
+    with cols[0]:
+        if st.button("Cancel", key="dlg_cancel_btn", use_container_width=True):
+            st.session_state["_show_reset_dialog"] = False
+            st.rerun()
+    with cols[1]:
+        if st.button(
+            "Discard",
+            key="dlg_confirm_btn",
+            type="primary",
+            use_container_width=True,
+        ):
+            reset_state()
+            st.rerun()
+
+
 def _render_sidebar() -> None:
-    """Sidebar: only the `+ New session` button."""
+    """Sidebar: `+ New session` button. In State A (no audio loaded) the
+    click is direct; otherwise it opens a confirmation dialog so a stray
+    click can't wipe an in-progress draft."""
     with st.sidebar:
         if st.button(
             "+ New session", key="new_session_btn", type="primary", use_container_width=True
         ):
-            reset_state()
-            st.rerun()
+            if st.session_state.get("audio_bytes") is None:
+                reset_state()
+                st.rerun()
+            else:
+                st.session_state["_show_reset_dialog"] = True
+                st.rerun()
+
+    if st.session_state.get("_show_reset_dialog"):
+        _confirm_new_session_dialog()
 
 
 def _render_tab_bar() -> None:
@@ -465,10 +559,13 @@ def _render_notes_tab(model, tokenizer) -> None:
     if is_streaming:
         cards_placeholder = st.empty()
         status_placeholder = st.empty()
-        status_placeholder.markdown("_Generating…_")
+        status_placeholder.markdown(f"_{streaming_status_label([])}_")
         buf = ""
         meta: dict[str, object] = {}
         last_complete_count = 0
+        # Guard the status DOM update — without this we'd re-render the
+        # markdown every chunk (dozens per section), which is visibly stuttery.
+        last_status: str | None = None
         try:
             for chunk in stream_soap(
                 model,
@@ -482,12 +579,18 @@ def _render_notes_tab(model, tokenizer) -> None:
                 # A section is "complete" once a successor header appears.
                 # During streaming, all detected sections except the last are complete.
                 section_names = [n for n in SOAP_SECTIONS if n in sections]
+
+                status_text = streaming_status_label(section_names)
+                if status_text != last_status:
+                    status_placeholder.markdown(f"_{status_text}_")
+                    last_status = status_text
+
                 complete_count = max(0, len(section_names) - 1)
                 if complete_count > last_complete_count:
                     with cards_placeholder.container():
                         for name in section_names[:complete_count]:
                             with st.container(border=True):
-                                st.markdown(f"**{name.upper()}**")
+                                _render_section_header(name)
                                 st.markdown(sections[name])
                     last_complete_count = complete_count
         except Exception as exc:
@@ -536,7 +639,7 @@ def _render_notes_tab(model, tokenizer) -> None:
         # wipe in-progress edits if the user switches tabs mid-edit.
         for name in SOAP_SECTIONS:
             with st.container(border=True):
-                st.markdown(f"**{name.upper()}**")
+                _render_section_header(name)
                 buffer_key = SECTION_KEY_MAP[name]
                 new_value = st.text_area(
                     f"{name} edit",
@@ -565,7 +668,7 @@ def _render_notes_tab(model, tokenizer) -> None:
         for name in SOAP_SECTIONS:
             if name in parsed:
                 with st.container(border=True):
-                    st.markdown(f"**{name.upper()}**")
+                    _render_section_header(name)
                     st.markdown(parsed[name])
 
         # "Other" card surfaces text the parser didn't recognise as a SOAP section.
