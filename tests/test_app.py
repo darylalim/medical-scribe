@@ -1,9 +1,9 @@
 """Tests for app.py.
 
 Logic-level tests use plain dicts to exercise the pure helpers and the
-state-machine invariants without booting Streamlit. A single AppTest
-smoke verifies the UI boots into State A with the expected layout
-markers.
+state-machine invariants without booting Streamlit. A small set of
+AppTest-driven tests (built on the `booted_app` fixture) cover the
+boot smoke and the `+ New session` dialog-gating paths.
 """
 
 from __future__ import annotations
@@ -11,7 +11,32 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture
+def booted_app(mocker, monkeypatch):
+    """A booted AppTest with both model loaders mocked. Lands in State A
+    after the initial run. Tests that need a different starting state
+    (e.g., audio loaded) should mutate `at.session_state` and call
+    `at.run()` again before asserting on widgets."""
+    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
+    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
+    mocker.patch(
+        "app.load_medgemma",
+        return_value=(mocker.MagicMock(), mocker.MagicMock()),
+    )
+
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py")
+    at.run(timeout=30)
+    assert not at.exception, f"app boot raised: {at.exception}"
+    return at
+
+
 def _fresh_state() -> dict:
+    """All session-state keys populated to non-default values, so
+    `clear_downstream_state` tests can verify exactly which keys it
+    touches and which it leaves alone (workflow flags are
+    stage-orthogonal and must survive both clear paths)."""
     return {
         "audio_bytes": b"abc",
         "audio_name": "a.wav",
@@ -26,6 +51,8 @@ def _fresh_state() -> dict:
         "objective_edit": "edited o",
         "assessment_edit": "edited a",
         "plan_edit": "edited p",
+        "_streaming": True,
+        "_show_reset_dialog": True,
     }
 
 
@@ -35,11 +62,13 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="audio")
 
-    # Preserved (audio identity + orthogonal UI focus).
+    # Preserved (audio identity + orthogonal UI focus + workflow flags).
     assert state["audio_bytes"] == b"abc"
     assert state["audio_name"] == "a.wav"
     assert state["audio_hash"] == "deadbeef"
     assert state["active_tab"] == "notes"
+    assert state["_streaming"] is True
+    assert state["_show_reset_dialog"] is True
     # Cleared (downstream of new audio).
     assert state["tx"] is None
     assert state["tx_edit"] == ""
@@ -58,11 +87,13 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="tx")
 
-    # Preserved.
+    # Preserved (audio + transcript + UI focus + workflow flags).
     assert state["audio_bytes"] == b"abc"
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
     assert state["active_tab"] == "notes"
+    assert state["_streaming"] is True
+    assert state["_show_reset_dialog"] is True
     # Cleared (downstream of transcript edits).
     assert state["soap"] is None
     assert state["soap_truncated"] is False
@@ -159,22 +190,9 @@ def test_update_truncation_flag(initial, meta, expected):
     assert state["soap_truncated"] is expected
 
 
-def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
+def test_app_boots_to_state_a_with_models_mocked(booted_app):
     """Smoke test for the new shell: header + sidebar + controlled tabs."""
-    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
-
-    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
-    mocker.patch(
-        "app.load_medgemma",
-        return_value=(mocker.MagicMock(), mocker.MagicMock()),
-    )
-
-    from streamlit.testing.v1 import AppTest
-
-    at = AppTest.from_file("app.py")
-    at.run(timeout=30)
-
-    assert not at.exception, f"app raised: {at.exception}"
+    at = booted_app
 
     # Header markdown contains "Medical Scribe".
     rendered_md = " ".join(md.value for md in at.markdown)
@@ -194,23 +212,12 @@ def test_app_boots_to_state_a_with_models_mocked(mocker, monkeypatch):
     assert "No SOAP note yet" not in rendered_md
 
 
-def test_new_session_in_state_a_bypasses_dialog(mocker, monkeypatch):
+def test_new_session_in_state_a_bypasses_dialog(booted_app):
     """Regression guard for `_render_sidebar`'s State-A bypass:
     when no audio is loaded there's nothing to lose, so clicking
     + New session must NOT open the confirmation dialog. Catches the
     case where the gating on `audio_bytes` is removed or inverted."""
-    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
-    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
-    mocker.patch(
-        "app.load_medgemma",
-        return_value=(mocker.MagicMock(), mocker.MagicMock()),
-    )
-
-    from streamlit.testing.v1 import AppTest
-
-    at = AppTest.from_file("app.py")
-    at.run(timeout=30)
-    assert not at.exception, f"boot raised: {at.exception}"
+    at = booted_app
 
     new_session_btn = next(b for b in at.sidebar.button if "New session" in b.label)
     new_session_btn.click().run(timeout=30)
@@ -220,23 +227,12 @@ def test_new_session_in_state_a_bypasses_dialog(mocker, monkeypatch):
     assert at.session_state["_show_reset_dialog"] is False
 
 
-def test_new_session_with_audio_opens_dialog(mocker, monkeypatch):
+def test_new_session_with_audio_opens_dialog(booted_app):
     """Regression guard for the destructive-confirm half of
     `_render_sidebar`: when audio is loaded the click must arm the
     dialog (set `_show_reset_dialog=True`) and must NOT wipe state.
     Catches the case where the bypass branch fires in both directions."""
-    monkeypatch.setenv("HF_TOKEN", "hf_test_value")
-    mocker.patch("app.load_asr_pipeline", return_value=mocker.MagicMock())
-    mocker.patch(
-        "app.load_medgemma",
-        return_value=(mocker.MagicMock(), mocker.MagicMock()),
-    )
-
-    from streamlit.testing.v1 import AppTest
-
-    at = AppTest.from_file("app.py")
-    at.run(timeout=30)
-    assert not at.exception
+    at = booted_app
 
     # Inject a loaded-audio state and re-render so the sidebar sees it.
     at.session_state["audio_bytes"] = b"fake-audio-bytes"

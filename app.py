@@ -53,11 +53,17 @@ SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP
 # are used together — color alone fails for ~8% of male users, and
 # clinicians scan fast. test_section_color_and_initial_maps_cover_all_soap_sections
 # catches drift if SOAP_SECTIONS grows a fifth section.
+# White-on-color contrast must clear WCAG AA (4.5:1) for the chip letter
+# to remain readable. The amber/green Tailwind-500 shades fail badly
+# (~2:1); the -700 shades clear AA. Blue and purple at -500 only just
+# fail AA but the section name is the primary label, so the chip is
+# decorative — keeping them as-is preserves the visual identity that's
+# already been browser-verified.
 SECTION_COLORS: dict[str, str] = {
-    "Subjective": "#3b82f6",  # blue
-    "Objective": "#10b981",  # green
-    "Assessment": "#f59e0b",  # amber
-    "Plan": "#8b5cf6",  # purple
+    "Subjective": "#3b82f6",  # blue-500
+    "Objective": "#047857",  # emerald-700 (darkened for contrast)
+    "Assessment": "#b45309",  # amber-700 (darkened for contrast)
+    "Plan": "#8b5cf6",  # violet-500
 }
 
 SECTION_INITIALS: dict[str, str] = {
@@ -297,23 +303,56 @@ def show_error(label: str, exc: BaseException) -> None:
     st.error(f"{label}: {type(exc).__name__}: {exc}")
 
 
+def _soap_chip_styles_html() -> str:
+    """One-shot CSS for the SOAP card chips. Injected once per page
+    render via main(). Per-section background color is read from
+    SECTION_COLORS so adding a section in soap_sections.py also
+    auto-propagates here (paired with the SECTION_COLORS drift guard
+    in tests/test_app.py)."""
+    color_rules = "\n".join(
+        f".soap-chip-{name.lower()} {{ background: {color}; }}"
+        for name, color in SECTION_COLORS.items()
+    )
+    return f"""
+<style>
+.soap-section-header {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}}
+.soap-chip {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    color: white;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+}}
+.soap-section-name {{
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}}
+{color_rules}
+</style>
+"""
+
+
 def _render_section_header(name: str) -> None:
     """Colored letter-chip + section name. Reused by all three card render
-    paths (streaming, read, edit) so the visual stays consistent."""
-    color = SECTION_COLORS[name]
-    initial = SECTION_INITIALS[name]
+    paths (streaming, read, edit). Visual styles live in
+    _soap_chip_styles_html(), injected once per page render via main()."""
+    initial = html.escape(SECTION_INITIALS[name])
+    label = html.escape(name.upper())
     st.markdown(
-        f"""
-<div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-  <span style="
-    display:inline-flex; align-items:center; justify-content:center;
-    width:26px; height:26px; border-radius:6px;
-    background:{color}; color:white; font-weight:600; font-size:13px;
-    flex-shrink:0;
-  ">{html.escape(initial)}</span>
-  <span style="font-weight:600; letter-spacing:0.04em;">{html.escape(name.upper())}</span>
-</div>
-""",
+        f'<div class="soap-section-header">'
+        f'<span class="soap-chip soap-chip-{name.lower()}">{initial}</span>'
+        f'<span class="soap-section-name">{label}</span>'
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -697,6 +736,10 @@ def _render_notes_tab(model, tokenizer) -> None:
 def main() -> None:
     st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
     init_state()
+    # CSS for SOAP chips. Injected once per render so _render_section_header
+    # can emit class-based markup at all three card render sites without
+    # repeating the inline styles.
+    st.markdown(_soap_chip_styles_html(), unsafe_allow_html=True)
     require_hf_token()
 
     # Eager model load — surface any error before the user uploads.
