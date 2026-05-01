@@ -513,3 +513,24 @@ def test_populate_section_edit_buffers_empty_soap_clears_all():
 
     for key in SECTION_KEY_MAP.values():
         assert state[key] == ""
+
+
+def test_state_a_renders_mic_and_upload_without_expander(booted_app):
+    """State A landing exposes both mic and upload affordances without
+    an expander click. Regression guard for the redesign goal of
+    'discoverability for first-time clinicians testing with a sample
+    recording'. The old layout hid upload behind a 'Or upload an existing
+    recording' expander."""
+    at = booted_app
+
+    rendered_md = " ".join(md.value for md in at.markdown)
+
+    # Both affordance labels render at the top level.
+    assert "Record this visit" in rendered_md, "mic affordance label missing"
+    assert "Upload a recording" in rendered_md, "upload affordance label missing"
+
+    # The old expander label must not appear anywhere — its presence would
+    # mean upload is still hidden behind a click.
+    assert "Or upload an existing recording" not in rendered_md, (
+        "upload should not be inside an expander"
+    )
