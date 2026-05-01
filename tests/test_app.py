@@ -441,3 +441,75 @@ def test_streaming_status_label(section_names, expected):
     from app import streaming_status_label
 
     assert streaming_status_label(section_names) == expected
+
+
+@pytest.mark.parametrize(
+    ("soap", "expected"),
+    [
+        (None, "Generate SOAP note"),
+        ("", "Generate SOAP note"),
+        ("## Subjective\nbody", "Regenerate SOAP"),
+        ("anything truthy", "Regenerate SOAP"),
+    ],
+    ids=[
+        "none_returns_generate",
+        "empty_string_returns_generate",
+        "soap_with_section_returns_regenerate",
+        "non_empty_string_returns_regenerate",
+    ],
+)
+def test_primary_action_label(soap, expected):
+    """Label flips on truthiness of `soap` — falsy (None / empty) → Generate;
+    truthy → Regenerate. Click handler is the same either way."""
+    from app import primary_action_label
+
+    assert primary_action_label(soap) == expected
+
+
+def test_populate_section_edit_buffers_full_four_sections():
+    """All four section bodies land in their matching *_edit buffers."""
+    from app import SECTION_KEY_MAP, populate_section_edit_buffers
+
+    state: dict = dict.fromkeys(SECTION_KEY_MAP.values(), "")
+    soap = (
+        "## Subjective\ns body\n\n"
+        "## Objective\no body\n\n"
+        "## Assessment\na body\n\n"
+        "## Plan\np body\n"
+    )
+
+    populate_section_edit_buffers(state, soap)
+
+    assert state["subjective_edit"] == "s body"
+    assert state["objective_edit"] == "o body"
+    assert state["assessment_edit"] == "a body"
+    assert state["plan_edit"] == "p body"
+
+
+def test_populate_section_edit_buffers_missing_section_leaves_empty():
+    """Sections absent from the SOAP blob get empty-string buffers, not
+    KeyError. Defensive against partial / truncated model output."""
+    from app import SECTION_KEY_MAP, populate_section_edit_buffers
+
+    state: dict = dict.fromkeys(SECTION_KEY_MAP.values(), "preexisting value")
+    soap = "## Subjective\ns body\n\n## Plan\np body\n"
+
+    populate_section_edit_buffers(state, soap)
+
+    assert state["subjective_edit"] == "s body"
+    assert state["objective_edit"] == ""
+    assert state["assessment_edit"] == ""
+    assert state["plan_edit"] == "p body"
+
+
+def test_populate_section_edit_buffers_empty_soap_clears_all():
+    """Empty SOAP wipes every buffer to ''. Same semantics as the regenerate
+    click path in Task 3 (which calls this helper after resetting `soap`)."""
+    from app import SECTION_KEY_MAP, populate_section_edit_buffers
+
+    state: dict = dict.fromkeys(SECTION_KEY_MAP.values(), "preexisting")
+
+    populate_section_edit_buffers(state, "")
+
+    for key in SECTION_KEY_MAP.values():
+        assert state[key] == ""

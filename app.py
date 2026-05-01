@@ -184,6 +184,29 @@ def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str
     state["soap_truncated"] = meta.get("finish_reason") == "length"
 
 
+def primary_action_label(soap: object) -> str:
+    """Label for the primary action button.
+
+    Returns 'Regenerate SOAP' when a SOAP draft already exists (truthy
+    `soap`), 'Generate SOAP note' otherwise. The click handler is the same
+    either way (idempotent — discards section edits and re-runs against the
+    current transcript); the label flip is purely to surface the destructive
+    nature post-SOAP."""
+    return "Regenerate SOAP" if soap else "Generate SOAP note"
+
+
+def populate_section_edit_buffers(state: MutableMapping[str, object], soap: str) -> None:
+    """Populate the four `*_edit` session-state buffers from a SOAP markdown blob.
+
+    Called once on stream completion so the post-stream rerun lands with
+    cards already in always-editable mode and their bodies pre-filled.
+    Sections missing from `soap` get '' (defensive against partial / truncated
+    model output)."""
+    parsed = parse_soap_sections(soap)
+    for name in SOAP_SECTIONS:
+        state[SECTION_KEY_MAP[name]] = parsed.get(name, "")
+
+
 def streaming_status_label(section_names: list[str]) -> str:
     """Label for the streaming-status placeholder.
 
