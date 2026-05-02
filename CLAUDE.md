@@ -11,7 +11,7 @@ Local-first pipeline for Apple Silicon. Capture a physician-patient visit (live 
   - `llm.py` — MedGemma MLX loader + `stream_soap()` generator.
   - `prompts.py` — SOAP system prompt + `format_soap_messages()`.
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
-- `app.py` — Streamlit UI; the only file that imports `streamlit`. Three-state machine (A: empty → B: transcribing → C: working) with a global sidebar (`+ New session`). State C is a persistent split view (transcript left, SOAP right); the SOAP pane handles streaming, SOAP-ready, and edit sub-states internally.
+- `app.py` — Streamlit UI; the only file that imports `streamlit`. Five-state machine (A: no audio → B: transcribing → C: transcript ready → D: streaming SOAP → E: SOAP-ready/editable) with a global sidebar (`+ New session`). From State B onward the UI shell is a persistent vertical split (transcript left, SOAP right); the SOAP pane has four sub-renders — "Awaiting transcript" (B), "Click Generate" placeholder (C), streaming cards (D), and editable cards (E).
 - `.streamlit/config.toml` — server config; caps upload at `maxUploadSize = 100` MB.
 - `tests/` — ~100 unit tests + 1 gated integration test.
 
@@ -33,7 +33,7 @@ Local-first pipeline for Apple Silicon. Capture a physician-patient visit (live 
 - `medical_scribe/` modules **never** import `streamlit`. `app.py` is the only Streamlit entry point.
 - **Nothing is written to disk.** Audio bytes and the SOAP draft live in `st.session_state`; `Copy to clipboard` is the only export path (no Markdown download).
 - The 100 MB upload cap is enforced in **two** places: `.streamlit/config.toml` (`maxUploadSize = 100`) and a soft guard in `app.py` (`MAX_UPLOAD_MB`). Keep them in sync.
-- `medical_scribe/prompts.py` is the single source of truth for the SOAP system prompt — iterate it there, not in `llm.py`. The prompt mandates exact H2 section headers (`## Subjective`, `## Objective`, `## Assessment`, `## Plan`) which `parse_soap_sections` splits on; capitalisation drift breaks parsing silently.
+- `medical_scribe/prompts.py` is the single source of truth for the SOAP system prompt — iterate it there, not in `llm.py`. The prompt mandates exact H2 section headers (`## Subjective`, `## Objective`, `## Assessment`, `## Plan`) which `parse_soap_sections` splits on; capitalization drift breaks parsing silently.
 - `load_medgemma()` **must** register `<end_of_turn>` as a stop token via `tokenizer.add_eos_token("<end_of_turn>")`. MLX-community Gemma quants ship with `{<eos>}` only as the default stop set; without this, `stream_generate` runs to `max_tokens` and the model loops on post-hoc "thought" scaffolding.
 - `medical_scribe/__init__.py` re-exports the backend's public API. `__all__` is the canonical surface; `tests/test_init.py` enforces it stays in sync with the defining modules.
 - The primary action button is **idempotent** — clicking it post-SOAP discards in-progress section edits and re-runs against the current transcript. Its label flips between `Generate SOAP note` and `Regenerate SOAP` via `primary_action_label` (based on truthiness of `soap`); the click handler is the same in both states. The label flip surfaces the destructive nature.

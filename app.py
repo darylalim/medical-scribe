@@ -46,16 +46,13 @@ MAX_UPLOAD_MB = 100
 # test_initial_state_keys_match_section_key_map catches that drift.
 SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP_SECTIONS}
 
-# Visual vocabulary for the SOAP cards. Both color *and* letter chip
-# are used together — color alone fails for ~8% of male users, and
-# clinicians scan fast. test_section_color_and_initial_maps_cover_all_soap_sections
-# catches drift if SOAP_SECTIONS grows a fifth section.
-# White-on-color contrast must clear WCAG AA (4.5:1) for the chip letter
-# to remain readable. The amber/green Tailwind-500 shades fail badly
-# (~2:1); the -700 shades clear AA. Blue and purple at -500 only just
-# fail AA but the section name is the primary label, so the chip is
-# decorative — keeping them as-is preserves the visual identity that's
-# already been browser-verified.
+# SOAP cards combine color + letter chip; color alone fails for ~8% of
+# male readers. White-on-color chip contrast must clear WCAG AA (4.5:1)
+# — that's why emerald and amber are darkened to -700. Blue and violet
+# at -500 fall just short of AA, but the section name (not the chip) is
+# the primary label, so the lower contrast is acceptable; the colors
+# are browser-verified. Drift guard:
+# tests/test_app.py::test_section_color_and_initial_maps_cover_all_soap_sections.
 SECTION_COLORS: dict[str, str] = {
     "Subjective": "#3b82f6",  # blue-500
     "Objective": "#047857",  # emerald-700 (darkened for contrast)
@@ -268,9 +265,12 @@ def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key
         " background:#ff4b4b; color:white; cursor:pointer;"
         " font-weight:500; font-size:14px;"
     )
+    # f-string starts with `<` so `st.iframe`'s input-type heuristic
+    # (Path → URL → existing file → /-prefixed → else srcdoc) routes
+    # unambiguously to srcdoc. Don't reintroduce a leading newline or
+    # whitespace.
     st.iframe(
-        f"""
-<button id="{key}" style="{btn_style}">{safe_label}</button>
+        f"""<button id="{key}" style="{btn_style}">{safe_label}</button>
 <script>
   (function() {{
     const btn = document.getElementById("{key}");
@@ -707,17 +707,15 @@ def _render_soap_pane(model, tokenizer) -> None:
 
 
 def _render_split_view(asr_pipe, model, tokenizer) -> None:
-    """States B and beyond: persistent vertical split — transcript pane left,
-    SOAP pane right. Each pane handles its own state-aware sub-render.
+    """States B and beyond: persistent vertical split (transcript left,
+    SOAP right). Each pane handles its own state-aware sub-render.
 
-    SOAP pane is rendered BEFORE transcript pane because the transcript pane's
-    State-B branch (tx is None) runs a synchronous `transcribe()` call inside
-    a spinner that blocks the rest of column rendering until it finishes. By
-    rendering the right pane first, the user sees the SOAP pane's "Awaiting
-    transcript…" placeholder while the left pane shows audio + spinner —
-    instead of seeing a blank right column. Streamlit's column layout is
-    determined by the `cols[i]` index, not by `with`-block execution order,
-    so this swap doesn't affect the visual position of the panes."""
+    The SOAP pane is rendered before the transcript pane because State B's
+    transcript branch blocks on a synchronous `transcribe()` call inside
+    a spinner. Rendering SOAP first means the right column shows its
+    "Awaiting transcript…" placeholder during transcription instead of
+    going blank. Streamlit positions columns by `cols[i]` index, not by
+    `with`-block order, so the visual layout is unaffected."""
     cols = st.columns([1, 1])
     with cols[1]:
         _render_soap_pane(model, tokenizer)

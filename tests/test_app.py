@@ -668,6 +668,58 @@ def test_state_c_right_pane_shows_click_generate_placeholder(booted_app):
     )
 
 
+def _iframe_srcdocs(at) -> list[str]:
+    """Walk the AppTest tree and collect every iframe element's `srcdoc`.
+
+    `st.iframe` renders as an `UnknownElement` with `type="iframe"`; its
+    `proto.srcdoc` holds the embedded HTML. AppTest doesn't expose a typed
+    accessor for iframes (Streamlit 1.56), so we walk the tree manually."""
+    found: list[str] = []
+
+    def walk(node):
+        if getattr(node, "type", None) == "iframe":
+            proto = getattr(node, "proto", None)
+            if proto is not None and proto.srcdoc:
+                found.append(proto.srcdoc)
+        children = getattr(node, "children", {})
+        if isinstance(children, dict):
+            for child in children.values():
+                walk(child)
+
+    walk(at._tree)
+    return found
+
+
+def test_copy_button_renders_iframe_with_clipboard_payload(booted_app):
+    """Locks the clipboard button's iframe render path post-st.iframe migration.
+
+    `st.iframe` auto-detects HTML-string input via a fallback heuristic
+    (Path → URL → existing file → /-prefixed → else srcdoc). This test
+    asserts the button id, `clipboard.writeText` JS, and a unique marker
+    from the SOAP payload all land in the iframe's `srcdoc` — catches
+    regressions where the heuristic mis-routes the payload to `src` (URL),
+    which would silently produce a blank iframe."""
+    at = booted_app
+    _seed_state_e(at)
+    # Override one buffer with a unique marker to confirm the SOAP payload is
+    # threaded into the JS clipboard call.
+    at.session_state["subjective_edit"] = "TEST_S_BODY_MARKER"
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    srcdocs = _iframe_srcdocs(at)
+    copy_iframe = next((s for s in srcdocs if 'id="copy_btn"' in s), None)
+    assert copy_iframe is not None, (
+        f"no iframe with id='copy_btn' rendered; iframe srcdocs: {[s[:80] for s in srcdocs]}"
+    )
+    assert "navigator.clipboard.writeText" in copy_iframe, (
+        "clipboard JS missing from copy-button iframe"
+    )
+    assert "TEST_S_BODY_MARKER" in copy_iframe, (
+        "SOAP payload not embedded in copy-button iframe srcdoc"
+    )
+
+
 def test_truncation_warning_renders_when_flagged(booted_app):
     """When soap_truncated is True (set on stream completion when
     finish_reason=='length'), a persistent warning renders at the top of the

@@ -48,7 +48,7 @@ Uploads are capped at **100 MB** (`.streamlit/config.toml`); split longer record
 - **State B (transcribing)** — left pane shows the audio player and a transcribing spinner; right pane shows an "Awaiting transcript…" placeholder so the screen never goes blank.
 - **State C onward** — persistent vertical split:
   - **Left pane** — audio player, editable transcript, and the primary action button (label flips between **Generate SOAP note** and **Regenerate SOAP** based on whether a draft already exists).
-  - **Right pane** — the SOAP draft as four color-coded cards (Subjective / Objective / Assessment / Plan) with letter badges (S / O / A / P), then a **Copy to clipboard** button. During streaming, cards appear one at a time as each section completes, with an italic status line ("Drafting Subjective…", …) underneath. Once streaming finishes, every card body is an editable text area in place — no Edit/Done toggle.
+  - **Right pane** — the SOAP draft as four color-coded cards (Subjective / Objective / Assessment / Plan) with letter badges (S / O / A / P), then a **Copy to clipboard** button. During streaming, cards appear one at a time as each section completes, with an italic status line ("Drafting Subjective…", …) below the cards. Once streaming finishes, every card body is an editable text area in place — no Edit/Done toggle.
 
 ### Workflow
 
