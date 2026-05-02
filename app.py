@@ -359,9 +359,10 @@ def _soap_chip_styles_html() -> str:
 
 
 def _render_section_header(name: str) -> None:
-    """Colored letter-chip + section name. Reused by all three card render
-    paths (streaming, read, edit). Visual styles live in
-    _soap_chip_styles_html(), injected once per page render via main()."""
+    """Colored letter-chip + section name. Reused by both card render
+    paths (streaming markdown during generation, always-editable text_areas
+    post-stream). Visual styles live in _soap_chip_styles_html(), injected
+    once per page render via main()."""
     initial = html.escape(SECTION_INITIALS[name])
     label = html.escape(name.upper())
     st.markdown(
