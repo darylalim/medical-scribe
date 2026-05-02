@@ -584,3 +584,122 @@ def test_card_edit_buffer_persists_across_reruns(booted_app):
     at.run(timeout=30)
     assert not at.exception
     assert at.session_state["subjective_edit"] == "edited subjective"
+
+
+@pytest.mark.parametrize(
+    ("soap_value", "expected_label", "absent_label"),
+    [
+        (None, "Generate SOAP note", "Regenerate SOAP"),
+        (
+            "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n",
+            "Regenerate SOAP",
+            "Generate SOAP note",
+        ),
+    ],
+    ids=["pre_soap_shows_generate", "post_soap_shows_regenerate"],
+)
+def test_primary_action_button_label_flips_with_soap_state(
+    booted_app, soap_value, expected_label, absent_label
+):
+    """The button label is sourced from primary_action_label and reflects
+    the current `soap` state in the rendered UI. Catches a regression where
+    someone hardcodes either label string in the render code, bypassing the
+    helper."""
+    at = booted_app
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+    at.session_state["soap"] = soap_value
+    if soap_value is not None:
+        # Mirror what populate_section_edit_buffers does on stream completion.
+        at.session_state["subjective_edit"] = "foo"
+        at.session_state["objective_edit"] = "o"
+        at.session_state["assessment_edit"] = "a"
+        at.session_state["plan_edit"] = "p"
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    button_labels = [b.label for b in at.button]
+    assert expected_label in button_labels, (
+        f"expected primary-action button label {expected_label!r}; saw {button_labels!r}"
+    )
+    assert absent_label not in button_labels, (
+        f"unexpected label {absent_label!r} present alongside {expected_label!r}; "
+        f"saw {button_labels!r}"
+    )
+
+
+def test_state_b_right_pane_shows_awaiting_transcript_placeholder(booted_app, mocker):
+    """In State B (audio captured, transcribing in progress), the right pane
+    shows 'Awaiting transcript…' while the left pane's spinner blocks. Locks
+    the column-order swap behavior in _render_split_view: SOAP pane renders
+    first so the right column isn't blank during the synchronous transcribe.
+
+    Stubs out _render_transcript_pane so the test can observe State B without
+    the synchronous transcribe call advancing immediately to State C."""
+    at = booted_app
+    mocker.patch("app._render_transcript_pane", lambda asr_pipe: None)
+
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    # tx stays None — State B
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    rendered_md = " ".join(md.value for md in at.markdown)
+    assert "Awaiting transcript" in rendered_md, (
+        f"State B right pane should show 'Awaiting transcript…' placeholder; "
+        f"rendered markdown: {rendered_md!r}"
+    )
+
+
+def test_state_c_right_pane_shows_click_generate_placeholder(booted_app):
+    """In State C (transcript ready, no SOAP, not streaming), the right pane
+    shows the 'Click Generate SOAP note on the left…' placeholder. Locks the
+    'no blank pane' UX guarantee — without this, the user would see only the
+    transcript on the left and an empty right column until they click Generate."""
+    at = booted_app
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+    # soap stays None, _streaming stays False — State C
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    rendered_md = " ".join(md.value for md in at.markdown)
+    assert "Click **Generate SOAP note**" in rendered_md, (
+        f"State C right pane should show the 'Click Generate SOAP note…' "
+        f"placeholder; rendered markdown: {rendered_md!r}"
+    )
+
+
+def test_truncation_warning_renders_when_flagged(booted_app):
+    """When soap_truncated is True (set on stream completion when
+    finish_reason=='length'), a persistent warning renders at the top of the
+    right pane. The warning is a clinical-safety message — the SOAP may be
+    incomplete and the user must verify all four sections before copying."""
+    at = booted_app
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+    at.session_state["soap"] = "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n"
+    at.session_state["subjective_edit"] = "foo"
+    at.session_state["objective_edit"] = "o"
+    at.session_state["assessment_edit"] = "a"
+    at.session_state["plan_edit"] = "p"
+    at.session_state["soap_truncated"] = True
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    warning_texts = [w.value for w in at.warning]
+    assert any("output token limit" in text for text in warning_texts), (
+        f"truncation warning should render when soap_truncated=True; "
+        f"saw warnings: {warning_texts!r}"
+    )
