@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import streamlit as st  # noqa: E402
-import streamlit.components.v1 as components  # noqa: E402
 
 from medical_scribe import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
@@ -240,7 +239,7 @@ def escape_text_for_inline_script(text: str) -> str:
     close an enclosing `<script>` tag.
 
     Used by `copy_to_clipboard_button` to embed user-controlled SOAP content
-    in a `<script>` block via `streamlit.components.v1.html`.
+    in a `<script>` block via `st.iframe`.
     """
     return json.dumps(text).replace("</", "<\\/")
 
@@ -248,11 +247,10 @@ def escape_text_for_inline_script(text: str) -> str:
 def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key: str) -> None:
     """Render a Copy-to-clipboard button using the JavaScript Clipboard API.
 
-    Uses `streamlit.components.v1.html` (iframe-based component) rather
-    than `st.html` because the latter strips/sanitizes inline event
-    handlers in current Streamlit versions, causing silent click
-    failures. The component iframe runs JavaScript reliably and Streamlit
-    grants it `clipboard-write` permission by default.
+    Uses `st.iframe` rather than `st.html` because the latter
+    strips/sanitizes inline event handlers in current Streamlit versions,
+    causing silent click failures. The iframe runs JavaScript reliably
+    and Streamlit grants it `clipboard-write` permission by default.
 
     Click writes `text` to the clipboard via `navigator.clipboard.writeText`,
     flashes a "✓ Copied" toast for 1.5s on success, and surfaces a "✗ Copy
@@ -270,7 +268,7 @@ def copy_to_clipboard_button(text: str, *, label: str = "Copy to clipboard", key
         " background:#ff4b4b; color:white; cursor:pointer;"
         " font-weight:500; font-size:14px;"
     )
-    components.html(
+    st.iframe(
         f"""
 <button id="{key}" style="{btn_style}">{safe_label}</button>
 <script>
