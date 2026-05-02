@@ -1,10 +1,9 @@
 """Streamlit UI for the MedASR -> MedGemma SOAP pipeline.
 
-Sidebar + Transcript/Notes tabs. Live capture via st.audio_input; file
-upload as a secondary affordance. Notes tab renders the SOAP draft as
-four cards (Subjective / Objective / Assessment / Plan) with an
-explicit Edit mode. Copy to clipboard is the only export — nothing is
-written to disk."""
+Persistent split view (transcript left, SOAP right) from State C
+onward. Live capture via st.audio_input; file upload as a secondary
+affordance. SOAP cards are always-editable post-stream. Copy to
+clipboard is the only export — nothing is written to disk."""
 
 from __future__ import annotations
 
