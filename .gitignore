@@ -1,5 +1,6 @@
 # Secrets
 .env
+.streamlit/secrets.toml
 
 # Python
 __pycache__/
@@ -11,20 +12,13 @@ dist/
 # Virtual environments
 .venv/
 
-# uv
+# Tool caches & outputs (uv, ruff, pytest, coverage)
 .uv-cache/
-
-# Ruff
 .ruff_cache/
-
-# pytest / coverage
 .pytest_cache/
 .coverage
 coverage.xml
 htmlcov/
-
-# Streamlit
-.streamlit/secrets.toml
 
 # Claude Code (user-specific permissions)
 .claude/settings.local.json
