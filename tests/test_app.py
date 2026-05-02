@@ -32,6 +32,44 @@ def booted_app(mocker, monkeypatch):
     return at
 
 
+# Minimal valid four-section SOAP markdown — used by tests that need a
+# parseable draft to exercise State-E behavior. Mirrors the SAMPLE_FULL
+# pattern in test_soap_sections.py.
+_MINIMAL_SOAP = "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n"
+
+_FAKE_AUDIO_STATE = {
+    "audio_bytes": b"fake-audio-bytes",
+    "audio_name": "fake.wav",
+    "audio_hash": "fake-hash",
+}
+
+
+def _seed_state_c(at) -> None:
+    """Mutate `at.session_state` so the next `at.run()` lands in State C
+    (transcript ready, no SOAP). Caller is responsible for the rerun."""
+    for key, value in _FAKE_AUDIO_STATE.items():
+        at.session_state[key] = value
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+
+
+def _seed_state_e(at) -> None:
+    """Mutate `at.session_state` so the next `at.run()` lands in State E
+    (SOAP ready). Calls `populate_section_edit_buffers` so the four card
+    buffers stay consistent with `_MINIMAL_SOAP` — if the constant changes
+    the buffers track it automatically."""
+    from collections.abc import MutableMapping
+    from typing import cast
+
+    from app import populate_section_edit_buffers
+
+    _seed_state_c(at)
+    at.session_state["soap"] = _MINIMAL_SOAP
+    populate_section_edit_buffers(
+        cast(MutableMapping[str, object], at.session_state), _MINIMAL_SOAP
+    )
+
+
 def _fresh_state() -> dict:
     """All session-state keys populated to non-default values, so
     `clear_downstream_state` tests can verify exactly which keys it
@@ -517,23 +555,7 @@ def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
     primary win — verifying SOAP claims against the transcript without
     tab-switching."""
     at = booted_app
-
-    # Seed State C (SOAP ready — transcript and soap both present) directly via session_state.
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
-    at.session_state["tx"] = "Doctor: tell me what brought you in. Patient: chest pain x 2 days."
-    at.session_state["tx_edit"] = at.session_state["tx"]
-    at.session_state["soap"] = (
-        "## Subjective\nReports L-sided chest pain x 2 days.\n\n"
-        "## Objective\nBP 132/84, HR 78.\n\n"
-        "## Assessment\nAtypical chest pain.\n\n"
-        "## Plan\nECG, troponin.\n"
-    )
-    at.session_state["subjective_edit"] = "Reports L-sided chest pain x 2 days."
-    at.session_state["objective_edit"] = "BP 132/84, HR 78."
-    at.session_state["assessment_edit"] = "Atypical chest pain."
-    at.session_state["plan_edit"] = "ECG, troponin."
+    _seed_state_e(at)
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
 
@@ -562,20 +584,10 @@ def test_card_edit_buffer_persists_across_reruns(booted_app):
     conditionally-rendered branches; the test exercises the basic
     persistence path."""
     at = booted_app
-
-    # Seed State C / SOAP-ready and put text into one buffer.
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
-    at.session_state["tx"] = "fake transcript"
-    at.session_state["tx_edit"] = "fake transcript"
-    at.session_state["soap"] = (
-        "## Subjective\noriginal\n## Objective\no\n## Assessment\na\n## Plan\np\n"
-    )
+    _seed_state_e(at)
+    # Override one buffer to a non-default value so the rerun's persistence
+    # claim is testable.
     at.session_state["subjective_edit"] = "edited subjective"
-    at.session_state["objective_edit"] = "o"
-    at.session_state["assessment_edit"] = "a"
-    at.session_state["plan_edit"] = "p"
     at.run(timeout=30)
     assert not at.exception
 
@@ -587,37 +599,22 @@ def test_card_edit_buffer_persists_across_reruns(booted_app):
 
 
 @pytest.mark.parametrize(
-    ("soap_value", "expected_label", "absent_label"),
+    ("seeder", "expected_label", "absent_label"),
     [
-        (None, "Generate SOAP note", "Regenerate SOAP"),
-        (
-            "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n",
-            "Regenerate SOAP",
-            "Generate SOAP note",
-        ),
+        (_seed_state_c, "Generate SOAP note", "Regenerate SOAP"),
+        (_seed_state_e, "Regenerate SOAP", "Generate SOAP note"),
     ],
     ids=["pre_soap_shows_generate", "post_soap_shows_regenerate"],
 )
 def test_primary_action_button_label_flips_with_soap_state(
-    booted_app, soap_value, expected_label, absent_label
+    booted_app, seeder, expected_label, absent_label
 ):
     """The button label is sourced from primary_action_label and reflects
     the current `soap` state in the rendered UI. Catches a regression where
     someone hardcodes either label string in the render code, bypassing the
     helper."""
     at = booted_app
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
-    at.session_state["tx"] = "fake transcript"
-    at.session_state["tx_edit"] = "fake transcript"
-    at.session_state["soap"] = soap_value
-    if soap_value is not None:
-        # Mirror what populate_section_edit_buffers does on stream completion.
-        at.session_state["subjective_edit"] = "foo"
-        at.session_state["objective_edit"] = "o"
-        at.session_state["assessment_edit"] = "a"
-        at.session_state["plan_edit"] = "p"
+    seeder(at)
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
 
@@ -641,10 +638,8 @@ def test_state_b_right_pane_shows_awaiting_transcript_placeholder(booted_app, mo
     the synchronous transcribe call advancing immediately to State C."""
     at = booted_app
     mocker.patch("app._render_transcript_pane", lambda asr_pipe: None)
-
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
+    for key, value in _FAKE_AUDIO_STATE.items():
+        at.session_state[key] = value
     # tx stays None — State B
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
@@ -662,12 +657,7 @@ def test_state_c_right_pane_shows_click_generate_placeholder(booted_app):
     'no blank pane' UX guarantee — without this, the user would see only the
     transcript on the left and an empty right column until they click Generate."""
     at = booted_app
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
-    at.session_state["tx"] = "fake transcript"
-    at.session_state["tx_edit"] = "fake transcript"
-    # soap stays None, _streaming stays False — State C
+    _seed_state_c(at)
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
 
@@ -684,16 +674,7 @@ def test_truncation_warning_renders_when_flagged(booted_app):
     right pane. The warning is a clinical-safety message — the SOAP may be
     incomplete and the user must verify all four sections before copying."""
     at = booted_app
-    at.session_state["audio_bytes"] = b"fake-audio-bytes"
-    at.session_state["audio_name"] = "fake.wav"
-    at.session_state["audio_hash"] = "fake-hash"
-    at.session_state["tx"] = "fake transcript"
-    at.session_state["tx_edit"] = "fake transcript"
-    at.session_state["soap"] = "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n"
-    at.session_state["subjective_edit"] = "foo"
-    at.session_state["objective_edit"] = "o"
-    at.session_state["assessment_edit"] = "a"
-    at.session_state["plan_edit"] = "p"
+    _seed_state_e(at)
     at.session_state["soap_truncated"] = True
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
