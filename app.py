@@ -30,7 +30,6 @@ from medical_scribe import (  # noqa: E402
     DEFAULT_MODEL_ID,
     SECTION_HEADER_RE,
     SOAP_SECTIONS,
-    assemble_soap,
     format_for_clipboard,
     load_asr_pipeline,
     load_medgemma,
@@ -442,37 +441,6 @@ def _render_sidebar() -> None:
         _confirm_new_session_dialog()
 
 
-def _render_tab_bar() -> None:
-    """Two buttons styled as tabs. `active_tab` session-state key
-    decides which tab body the dispatcher renders.
-
-    Native st.tabs() is client-side only — the active tab cannot be
-    set from Python — so the Generate handler couldn't auto-switch
-    to Notes. Hand-rolled tabs solve that.
-    """
-    active = st.session_state["active_tab"]
-    cols = st.columns([1, 1, 6])
-    with cols[0]:
-        if st.button(
-            "Transcript",
-            key="tab_transcript_btn",
-            type="primary" if active == "transcript" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["active_tab"] = "transcript"
-            st.rerun()
-    with cols[1]:
-        if st.button(
-            "Notes",
-            key="tab_notes_btn",
-            type="primary" if active == "notes" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["active_tab"] = "notes"
-            st.rerun()
-    st.divider()
-
-
 def _handle_upload(upload) -> bool:
     """Validate and persist a new audio capture (recorded or uploaded)
     into session state.
@@ -745,243 +713,30 @@ def _render_soap_pane(model, tokenizer) -> None:
         )
 
 
-def _render_transcript_tab(asr_pipe) -> None:
-    """Transcript tab: audio capture/upload + editable transcript +
-    Generate SOAP Note button. State-aware."""
-    audio_bytes = st.session_state["audio_bytes"]
-    tx = st.session_state["tx"]
-    is_streaming = bool(st.session_state.get("_streaming"))
+def _render_split_view(asr_pipe, model, tokenizer) -> None:
+    """States B and beyond: persistent vertical split — transcript pane left,
+    SOAP pane right. Each pane handles its own state-aware sub-render.
 
-    # State A: no audio yet.
-    if audio_bytes is None:
-        _render_state_a_chooser()
-        return
-
-    # States B-E: audio captured. Audio player at top.
-    mime = audio_mime_from_name(st.session_state["audio_name"])
-    st.audio(audio_bytes, format=mime if mime is not None else "audio/wav")
-
-    # State B: transcribing.
-    if tx is None:
-        with st.spinner("Transcribing audio…"):
-            try:
-                text = transcribe(asr_pipe, audio_bytes)
-            except Exception as exc:
-                show_error("Could not transcribe audio", exc)
-                reset_state()
-                st.stop()
-        st.session_state["tx"] = text
-        st.session_state["tx_edit"] = text
-        st.rerun()
-
-    # States C / D / E: editable transcript (disabled during streaming).
-    # Use value= + manual sync rather than key= so the value persists
-    # across tab switches. Streamlit clears widget-managed keys when the
-    # widget unmounts (e.g. when the user navigates to the Notes tab),
-    # which would silently wipe the transcript on return.
-    new_tx_edit = st.text_area(
-        "Transcript",
-        value=st.session_state["tx_edit"],
-        height=400,
-        label_visibility="collapsed",
-        disabled=is_streaming,
-    )
-    st.session_state["tx_edit"] = new_tx_edit
-
-    # Generate button (idempotent — re-clicking re-runs the LLM).
-    cols = st.columns([4, 1])
+    SOAP pane is rendered BEFORE transcript pane because the transcript pane's
+    State-B branch (tx is None) runs a synchronous `transcribe()` call inside
+    a spinner that blocks the rest of column rendering until it finishes. By
+    rendering the right pane first, the user sees the SOAP pane's "Awaiting
+    transcript…" placeholder while the left pane shows audio + spinner —
+    instead of seeing a blank right column. Streamlit's column layout is
+    determined by the `cols[i]` index, not by `with`-block execution order,
+    so this swap doesn't affect the visual position of the panes."""
+    cols = st.columns([1, 1])
     with cols[1]:
-        if st.button(
-            "Generate SOAP Note →",
-            type="primary",
-            disabled=is_streaming,
-            key="generate_btn",
-            use_container_width=True,
-        ):
-            if not st.session_state["tx_edit"].strip():
-                st.warning(
-                    "Transcript is empty — please provide or correct the "
-                    "transcription before generating a SOAP note."
-                )
-                return
-            # New generation: discard any in-progress edits.
-            st.session_state["is_editing"] = False
-            st.session_state["soap_truncated"] = False
-            for key in SECTION_KEY_MAP.values():
-                st.session_state[key] = ""
-            st.session_state["active_tab"] = "notes"
-            st.session_state["_streaming"] = True
-            st.rerun()
-
-
-def _render_notes_tab(model, tokenizer) -> None:
-    """Notes tab: stage-aware. Placeholder → streaming cards →
-    read-mode cards → edit-mode textareas."""
-    audio_bytes = st.session_state["audio_bytes"]
-    tx = st.session_state["tx"]
-    soap = st.session_state["soap"]
-    is_streaming = bool(st.session_state.get("_streaming"))
-
-    # State A: no audio yet.
-    if audio_bytes is None:
-        st.markdown("_No SOAP note yet — record or upload audio in the Transcript tab._")
-        return
-
-    # State B: transcribing.
-    if tx is None:
-        st.markdown("_Awaiting transcript…_")
-        return
-
-    # State C: SOAP idle.
-    if soap is None and not is_streaming:
-        st.markdown("_Click Generate from the Transcript tab to draft a SOAP note._")
-        return
-
-    # State D: streaming.
-    if is_streaming:
-        cards_placeholder = st.empty()
-        status_placeholder = st.empty()
-        status_placeholder.markdown(f"_{streaming_status_label([])}_")
-        buf = ""
-        meta: dict[str, object] = {}
-        last_complete_count = 0
-        # Guard the status DOM update — without this we'd re-render the
-        # markdown every chunk (dozens per section), which is visibly stuttery.
-        last_status: str | None = None
-        try:
-            for chunk in stream_soap(
-                model,
-                tokenizer,
-                st.session_state["tx_edit"],
-                max_tokens=DEFAULT_MAX_TOKENS,
-                meta=meta,
-            ):
-                buf += chunk
-                sections = parse_soap_sections(buf)
-                # A section is "complete" once a successor header appears.
-                # During streaming, all detected sections except the last are complete.
-                section_names = [n for n in SOAP_SECTIONS if n in sections]
-
-                status_text = streaming_status_label(section_names)
-                if status_text != last_status:
-                    status_placeholder.markdown(f"_{status_text}_")
-                    last_status = status_text
-
-                complete_count = max(0, len(section_names) - 1)
-                if complete_count > last_complete_count:
-                    with cards_placeholder.container():
-                        for name in section_names[:complete_count]:
-                            with st.container(border=True):
-                                _render_section_header(name)
-                                st.markdown(sections[name])
-                    last_complete_count = complete_count
-        except Exception as exc:
-            cards_placeholder.empty()
-            status_placeholder.empty()
-            show_error("SOAP generation failed", exc)
-            st.session_state["soap"] = None
-            st.session_state["soap_truncated"] = False
-            st.session_state["_streaming"] = False
-            return
-
-        # Stream completed successfully. Persist and rerun to land in State E.
-        # Don't call placeholder.empty() — Streamlit garbage-collects them on
-        # the rerun, and explicit clearing causes a visible flicker before
-        # State E's cards render in their place.
-        st.session_state["soap"] = buf
-        update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
-        st.session_state["_streaming"] = False
-        st.rerun()
-
-    # States E and E-edit: SOAP exists.
-    parsed = parse_soap_sections(soap or "")
-
-    # Persistent truncation warning.
-    if st.session_state.get("soap_truncated", False):
-        st.warning(
-            "The SOAP note reached the output token limit and may be incomplete. "
-            "Verify all four sections (Subjective, Objective, Assessment, Plan) "
-            "are present before copying."
-        )
-
-    # Defensive fallback: model output didn't parse into all four sections.
-    expected = set(SOAP_SECTIONS)
-    if expected - set(parsed):
-        st.warning(
-            "The SOAP note couldn't be fully parsed into sections — "
-            "review carefully before copying."
-        )
-
-    if st.session_state["is_editing"]:
-        # State E-edit: textareas in cards.
-        # Use value= + manual sync rather than key= so the buffer values
-        # persist across tab switches and edit-mode toggles. Same fix as
-        # the transcript text area in _render_transcript_tab — Streamlit
-        # clears widget-managed keys on unmount, which would silently
-        # wipe in-progress edits if the user switches tabs mid-edit.
-        for name in SOAP_SECTIONS:
-            with st.container(border=True):
-                _render_section_header(name)
-                buffer_key = SECTION_KEY_MAP[name]
-                new_value = st.text_area(
-                    f"{name} edit",
-                    value=st.session_state.get(buffer_key, ""),
-                    height=120,
-                    label_visibility="collapsed",
-                )
-                st.session_state[buffer_key] = new_value
-
-        # Action row: Done · Copy to clipboard. `edits` is read once per
-        # render and used by both buttons.
-        edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
-        cols = st.columns([1, 2, 5])
-        with cols[0]:
-            if st.button("Done", key="done_btn", use_container_width=True):
-                st.session_state["soap"] = assemble_soap(edits)
-                st.session_state["is_editing"] = False
-                st.rerun()
-        with cols[1]:
-            copy_to_clipboard_button(
-                format_for_clipboard(edits),
-                key="copy_btn_edit",
-            )
-    else:
-        # State E: read-mode cards.
-        for name in SOAP_SECTIONS:
-            if name in parsed:
-                with st.container(border=True):
-                    _render_section_header(name)
-                    st.markdown(parsed[name])
-
-        # "Other" card surfaces text the parser didn't recognise as a SOAP section.
-        remainder = compute_unparsed_remainder(soap, parsed)
-        if remainder:
-            with st.container(border=True):
-                st.markdown("**OTHER**")
-                st.markdown(remainder)
-
-        # Action row: Edit · Copy to clipboard.
-        cols = st.columns([1, 2, 5])
-        with cols[0]:
-            if st.button("Edit", key="edit_btn", use_container_width=True):
-                # Populate edit buffers from current parsed soap.
-                for name in SOAP_SECTIONS:
-                    st.session_state[SECTION_KEY_MAP[name]] = parsed.get(name, "")
-                st.session_state["is_editing"] = True
-                st.rerun()
-        with cols[1]:
-            copy_to_clipboard_button(
-                format_for_clipboard(parsed),
-                key="copy_btn_read",
-            )
+        _render_soap_pane(model, tokenizer)
+    with cols[0]:
+        _render_transcript_pane(asr_pipe)
 
 
 def main() -> None:
     st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
     init_state()
     # CSS for SOAP chips. Injected once per render so _render_section_header
-    # can emit class-based markup at all three card render sites without
-    # repeating the inline styles.
+    # can emit class-based markup at all card render sites.
     st.markdown(_soap_chip_styles_html(), unsafe_allow_html=True)
     require_hf_token()
 
@@ -1001,12 +756,13 @@ def main() -> None:
 
     _render_header()
     _render_sidebar()
-    _render_tab_bar()
 
-    if st.session_state["active_tab"] == "transcript":
-        _render_transcript_tab(asr_pipe)
+    # Dispatch by state. A → chooser; B/C → split view (transcript pane
+    # handles the spinner-during-transcribe sub-state internally).
+    if st.session_state["audio_bytes"] is None:
+        _render_state_a_chooser()
     else:
-        _render_notes_tab(model, tokenizer)
+        _render_split_view(asr_pipe, model, tokenizer)
 
 
 if __name__ == "__main__":

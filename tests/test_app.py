@@ -191,7 +191,7 @@ def test_update_truncation_flag(initial, meta, expected):
 
 
 def test_app_boots_to_state_a_with_models_mocked(booted_app):
-    """Smoke test for the new shell: header + sidebar + controlled tabs."""
+    """Smoke test for the split-view shell: header + sidebar + State-A chooser."""
     at = booted_app
 
     # Header markdown contains "Medical Scribe".
@@ -202,13 +202,12 @@ def test_app_boots_to_state_a_with_models_mocked(booted_app):
     sidebar_button_labels = [b.label for b in at.sidebar.button]
     assert any("New session" in label for label in sidebar_button_labels)
 
-    # Tab bar buttons render in the main area.
+    # State-A chooser renders both affordances. Tab buttons no longer exist.
     main_button_labels = [b.label for b in at.button]
-    assert "Transcript" in main_button_labels
-    assert "Notes" in main_button_labels
+    assert "Transcript" not in main_button_labels
+    assert "Notes" not in main_button_labels
 
-    # Active tab defaults to Transcript — Notes-tab placeholder copy
-    # is NOT visible.
+    # Notes-tab placeholder copy is gone (never reached State C).
     assert "No SOAP note yet" not in rendered_md
 
 
@@ -545,3 +544,38 @@ def test_state_a_renders_mic_and_upload_without_expander(booted_app):
     # presence structurally — markdown label assertion above is the
     # best we can do for that widget.)
     assert len(at.file_uploader) == 1, "file_uploader_widget not rendered"
+
+
+def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
+    """When transcript and SOAP both exist (State C / SOAP-ready), the split
+    view renders the transcript text_area AND at least one SOAP card body
+    text_area in a single render pass. Regression guard for the redesign's
+    primary win — verifying SOAP claims against the transcript without
+    tab-switching."""
+    at = booted_app
+
+    # Seed State E (SOAP ready) directly via session_state.
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "Doctor: tell me what brought you in. Patient: chest pain x 2 days."
+    at.session_state["tx_edit"] = at.session_state["tx"]
+    at.session_state["soap"] = (
+        "## Subjective\nReports L-sided chest pain x 2 days.\n\n"
+        "## Objective\nBP 132/84, HR 78.\n\n"
+        "## Assessment\nAtypical chest pain.\n\n"
+        "## Plan\nECG, troponin.\n"
+    )
+    at.session_state["subjective_edit"] = "Reports L-sided chest pain x 2 days."
+    at.session_state["objective_edit"] = "BP 132/84, HR 78."
+    at.session_state["assessment_edit"] = "Atypical chest pain."
+    at.session_state["plan_edit"] = "ECG, troponin."
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    # At least 2 text_areas: one for the transcript, at least one for a SOAP card.
+    # Today's render pre-redesign would only show ONE (whichever tab is active).
+    assert len(at.text_area) >= 2, (
+        f"split view should render transcript + at least one SOAP card "
+        f"text_area in the same pass; saw {len(at.text_area)}"
+    )
