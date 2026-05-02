@@ -13,7 +13,7 @@ Local-first pipeline for Apple Silicon. Live-capture or upload a physician-patie
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
 - `app.py` — Streamlit UI: sidebar (with `+ New session`) + persistent vertical split view (transcript pane left, SOAP pane right) starting from State C. The only file that imports `streamlit`. Three-state state machine (A: empty → B: transcribing → C: working). State C absorbs streaming, SOAP-ready, and editable cards as sub-renders; the SOAP pane handles its own state-aware branching internally.
 - `.streamlit/config.toml` — server config (caps upload at `maxUploadSize = 100` MB).
-- `tests/` — ~95 unit tests + 1 gated integration test.
+- `tests/` — ~100 unit tests + 1 gated integration test.
 
 ## Commands
 

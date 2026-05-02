@@ -43,22 +43,22 @@ On first run, MedGemma weights (~14 GB) download into `~/.cache/huggingface` —
 
 Uploads are capped at **100 MB** (`.streamlit/config.toml`). Split longer recordings before uploading.
 
-The UI has a sidebar plus two main-area tabs:
+The UI:
 
 - **Sidebar** — `+ New session` button. Clicking with audio loaded opens a confirm dialog before discarding the current draft; with no audio it resets immediately.
-- **Transcript tab** — record audio in-browser via `st.audio_input`, or expand "Or upload an existing recording" to choose a `.wav` / `.mp3` / `.flac` / `.m4a` file. Once audio exists, the audio player and the editable transcript text area appear; the **Generate SOAP Note →** button at the bottom-right kicks off generation and auto-switches to the Notes tab.
-- **Notes tab** — the SOAP draft renders as four color-coded cards (Subjective / Objective / Assessment / Plan), each prefixed with a colored letter badge (S / O / A / P). While the model streams, cards appear one at a time as each section completes; an italic status line above the cards updates from "Generating…" to "Drafting Subjective…", "Drafting Objective…", and so on as each header is parsed. The action row at the bottom is `[Edit · Copy to clipboard]`.
-- **Edit mode** — clicking **Edit** turns each card into an editable text area in place; the action row becomes `[Done · Copy to clipboard]`. Done commits the edits back to the SOAP source. Copy can be clicked at any time, including mid-edit.
+- **State A (no audio)** — centered chooser with two side-by-side cards: record live with `st.audio_input` (left) or upload a `.wav` / `.mp3` / `.flac` / `.m4a` file (right). Both paths are first-class — no expander.
+- **State B (transcribing)** — left pane shows the audio player and a transcribing spinner; right pane shows an "Awaiting transcript…" placeholder so the screen never goes blank.
+- **State C onward** — persistent vertical split. Left pane: audio player, editable transcript, and the primary action button (label flips between **Generate SOAP note** and **Regenerate SOAP** based on whether a draft already exists). Right pane: the SOAP draft as four color-coded cards (Subjective / Objective / Assessment / Plan) with letter badges (S / O / A / P), then a **Copy to clipboard** button. While the model streams, cards appear one at a time as each section completes, with an italic status line ("Drafting Subjective…", "Drafting Objective…", …) above. Once streaming finishes, every card body is an editable text area in place — no Edit/Done toggle.
 
 Workflow:
 
-1. **Record** the visit live with the mic widget — or expand the upload section to attach an existing `.wav` / `.mp3` / `.flac` / `.m4a` recording.
-2. **Review** the auto-generated transcript — replay the audio to verify ambiguous segments. Edit if needed.
-3. **Generate** the SOAP note. The view auto-switches to Notes; cards stream in section-by-section.
-4. **Edit** any card if the draft needs correction, then click Done.
+1. **Record** the visit live with the mic, or click the upload card to attach an existing recording.
+2. **Review** the auto-generated transcript on the left — replay the audio to verify ambiguous segments. Edit if needed.
+3. **Generate** the SOAP note. Cards stream into the right pane while the transcript stays visible for cross-reference.
+4. **Refine** any card by typing directly into it. Edits are picked up immediately.
 5. **Copy** the note to clipboard for paste into the EHR or chart.
 
-To retry the same visit with a different draft, edit the transcript and click **Generate SOAP Note** again — the button is idempotent and re-runs against the current transcript. To start completely over, click **+ New session** in the sidebar.
+To retry the same visit with a different draft, edit the transcript and click **Regenerate SOAP** — the button is idempotent and re-runs against the current transcript, discarding in-progress card edits. To start completely over, click **+ New session** in the sidebar.
 
 Nothing is written to disk. Audio bytes and the SOAP draft live in process memory only.
 
@@ -114,7 +114,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                             # ~86 unit tests
+uv run pytest                                             # ~100 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                              # real-model integration test
 ```
