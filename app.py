@@ -83,10 +83,8 @@ INITIAL_STATE = {
     # SOAP — full markdown blob, source of truth
     "soap": None,
     "soap_truncated": False,
-    # UI mode
-    "active_tab": "transcript",
-    "is_editing": False,
-    # Per-section edit buffers (populated on entry to edit mode)
+    # Per-section edit buffers (now the canonical SOAP body post-stream;
+    # populated from the streaming buffer via populate_section_edit_buffers).
     "subjective_edit": "",
     "objective_edit": "",
     "assessment_edit": "",
@@ -116,16 +114,14 @@ def reset_state() -> None:
 def clear_downstream_state(state: MutableMapping[str, object], after: str) -> None:
     """Enforce the spec's state invariants. `after` names the last valid stage.
 
-    `active_tab` is intentionally not touched — it's a UI focus concern,
-    orthogonal to workflow stage. `+ New session` is the only path that
-    resets it (via reset_state).
-    """
+    Stage-orthogonal flags (e.g., `_streaming`, `_show_reset_dialog`)
+    survive both clear paths — they don't pertain to the audio/transcript/
+    SOAP pipeline."""
     if after == "audio":
         state["tx"] = None
         state["tx_edit"] = ""
         state["soap"] = None
         state["soap_truncated"] = False
-        state["is_editing"] = False
         state["subjective_edit"] = ""
         state["objective_edit"] = ""
         state["assessment_edit"] = ""
@@ -133,7 +129,6 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
     elif after == "tx":
         state["soap"] = None
         state["soap_truncated"] = False
-        state["is_editing"] = False
         state["subjective_edit"] = ""
         state["objective_edit"] = ""
         state["assessment_edit"] = ""

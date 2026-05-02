@@ -45,8 +45,6 @@ def _fresh_state() -> dict:
         "tx_edit": "edited transcript",
         "soap": "generated soap",
         "soap_truncated": True,
-        "active_tab": "notes",
-        "is_editing": True,
         "subjective_edit": "edited s",
         "objective_edit": "edited o",
         "assessment_edit": "edited a",
@@ -62,11 +60,10 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="audio")
 
-    # Preserved (audio identity + orthogonal UI focus + workflow flags).
+    # Preserved (audio identity + workflow flags).
     assert state["audio_bytes"] == b"abc"
     assert state["audio_name"] == "a.wav"
     assert state["audio_hash"] == "deadbeef"
-    assert state["active_tab"] == "notes"
     assert state["_streaming"] is True
     assert state["_show_reset_dialog"] is True
     # Cleared (downstream of new audio).
@@ -74,7 +71,6 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     assert state["tx_edit"] == ""
     assert state["soap"] is None
     assert state["soap_truncated"] is False
-    assert state["is_editing"] is False
     assert state["subjective_edit"] == ""
     assert state["objective_edit"] == ""
     assert state["assessment_edit"] == ""
@@ -87,17 +83,15 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     state = _fresh_state()
     clear_downstream_state(state, after="tx")
 
-    # Preserved (audio + transcript + UI focus + workflow flags).
+    # Preserved (audio + transcript + workflow flags).
     assert state["audio_bytes"] == b"abc"
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
-    assert state["active_tab"] == "notes"
     assert state["_streaming"] is True
     assert state["_show_reset_dialog"] is True
     # Cleared (downstream of transcript edits).
     assert state["soap"] is None
     assert state["soap_truncated"] is False
-    assert state["is_editing"] is False
     assert state["subjective_edit"] == ""
     assert state["objective_edit"] == ""
     assert state["assessment_edit"] == ""
@@ -253,12 +247,10 @@ def test_new_session_with_audio_opens_dialog(booted_app):
 
 
 def test_initial_state_includes_new_keys():
-    """Locks the new session-state shape introduced by the
-    live-capture-and-tabs redesign."""
+    """Locks the session-state shape introduced by the live-capture-and-tabs
+    redesign and amended by the split-view redesign."""
     from app import INITIAL_STATE
 
-    assert INITIAL_STATE["active_tab"] == "transcript"
-    assert INITIAL_STATE["is_editing"] is False
     assert INITIAL_STATE["subjective_edit"] == ""
     assert INITIAL_STATE["objective_edit"] == ""
     assert INITIAL_STATE["assessment_edit"] == ""
@@ -273,34 +265,6 @@ def test_initial_state_includes_show_reset_dialog():
     from app import INITIAL_STATE
 
     assert INITIAL_STATE["_show_reset_dialog"] is False
-
-
-def test_active_tab_round_trips():
-    """Direct state assignment is the toggle mechanism — verify the
-    values we use round-trip cleanly through INITIAL_STATE iteration."""
-    from app import INITIAL_STATE
-
-    state = dict(INITIAL_STATE)
-    assert state["active_tab"] == "transcript"
-
-    state["active_tab"] = "notes"
-    assert state["active_tab"] == "notes"
-
-    state["active_tab"] = "transcript"
-    assert state["active_tab"] == "transcript"
-
-
-def test_is_editing_round_trips():
-    from app import INITIAL_STATE
-
-    state = dict(INITIAL_STATE)
-    assert state["is_editing"] is False
-
-    state["is_editing"] = True
-    assert state["is_editing"] is True
-
-    state["is_editing"] = False
-    assert state["is_editing"] is False
 
 
 @pytest.mark.parametrize(
@@ -554,7 +518,7 @@ def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
     tab-switching."""
     at = booted_app
 
-    # Seed State E (SOAP ready) directly via session_state.
+    # Seed State C (SOAP ready — transcript and soap both present) directly via session_state.
     at.session_state["audio_bytes"] = b"fake-audio-bytes"
     at.session_state["audio_name"] = "fake.wav"
     at.session_state["audio_hash"] = "fake-hash"
@@ -579,3 +543,44 @@ def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
         f"split view should render transcript + at least one SOAP card "
         f"text_area in the same pass; saw {len(at.text_area)}"
     )
+
+
+def test_initial_state_excludes_active_tab_and_is_editing():
+    """Drift guard against accidental re-introduction. Both keys were
+    removed in the split-view redesign — `active_tab` because tabs are gone,
+    `is_editing` because cards are always-editable post-stream."""
+    from app import INITIAL_STATE
+
+    assert "active_tab" not in INITIAL_STATE
+    assert "is_editing" not in INITIAL_STATE
+
+
+def test_card_edit_buffer_persists_across_reruns(booted_app):
+    """Always-editable card behavior: writing to a *_edit buffer and
+    re-rendering preserves the value across reruns. The CLAUDE.md
+    invariant about value= + manual sync (not key=) protects this in
+    conditionally-rendered branches; the test exercises the basic
+    persistence path."""
+    at = booted_app
+
+    # Seed State C / SOAP-ready and put text into one buffer.
+    at.session_state["audio_bytes"] = b"fake-audio-bytes"
+    at.session_state["audio_name"] = "fake.wav"
+    at.session_state["audio_hash"] = "fake-hash"
+    at.session_state["tx"] = "fake transcript"
+    at.session_state["tx_edit"] = "fake transcript"
+    at.session_state["soap"] = (
+        "## Subjective\noriginal\n## Objective\no\n## Assessment\na\n## Plan\np\n"
+    )
+    at.session_state["subjective_edit"] = "edited subjective"
+    at.session_state["objective_edit"] = "o"
+    at.session_state["assessment_edit"] = "a"
+    at.session_state["plan_edit"] = "p"
+    at.run(timeout=30)
+    assert not at.exception
+
+    # Re-run: the value must survive — text_areas use value= + manual sync,
+    # not key=, so they don't get GC'd by Streamlit's widget-state cleanup.
+    at.run(timeout=30)
+    assert not at.exception
+    assert at.session_state["subjective_edit"] == "edited subjective"
