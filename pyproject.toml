@@ -4,15 +4,21 @@ version = "0.5.0"
 description = "Local-first pipeline for Apple Silicon: MedASR transcription + MedGemma SOAP-note drafts."
 requires-python = ">=3.10,<3.13"
 dependencies = [
+    # ML / inference. transformers pinned to a v5.0+ commit — MedASR isn't compatible
+    # with the v4.x line currently on PyPI.
     "transformers @ git+https://github.com/huggingface/transformers.git@65dc261512cbdb1ee72b88ae5b222f2605aad8e5",
     "torch>=2.1.0",
+    "accelerate>=0.30.0",
+    "mlx-lm>=0.29,<1",
+
+    # Audio I/O
     "librosa>=0.10.0",
     "soundfile>=0.12.0",
     "numpy>=1.24.0",
-    "accelerate>=0.30.0",
+
+    # Config / UI
     "python-dotenv>=1.0.0",
     "streamlit>=1.39",
-    "mlx-lm>=0.29,<1",
 ]
 
 [dependency-groups]
@@ -25,6 +31,7 @@ dev = [
 ]
 
 [tool.uv]
+# Application, not a library — don't build medical_scribe as a wheel.
 package = false
 
 [tool.ruff]
@@ -52,7 +59,7 @@ python-version = "3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["."]  # so tests can `from app import ...` (app.py lives at the repo root)
 addopts = "-ra --strict-markers -m 'not integration'"
 markers = [
     "integration: hits real models or network; opt-in via -m integration",
