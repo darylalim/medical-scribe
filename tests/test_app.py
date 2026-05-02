@@ -534,3 +534,14 @@ def test_state_a_renders_mic_and_upload_without_expander(booted_app):
     assert "Or upload an existing recording" not in rendered_md, (
         "upload should not be inside an expander"
     )
+
+    # Structural check: no expanders rendered (resilient to label changes
+    # — a future implementation that uses a different expander label
+    # would otherwise silently pass).
+    assert len(at.expander) == 0, "upload should not be inside an expander"
+
+    # File-uploader widget directly present in the DOM. (audio_input has
+    # no AppTest accessor at Streamlit 1.39, so we don't assert its
+    # presence structurally — markdown label assertion above is the
+    # best we can do for that widget.)
+    assert len(at.file_uploader) == 1, "file_uploader_widget not rendered"

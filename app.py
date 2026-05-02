@@ -508,32 +508,37 @@ def _handle_upload(upload) -> bool:
 def _render_state_a_chooser() -> None:
     """State A landing — mic + upload affordances side by side.
 
+    Called only when `audio_bytes is None` (State A). Caller is
+    responsible for the gating; this function does not check.
+
     Replaces the prior centered single-column with the upload widget hidden
     behind 'Or upload an existing recording' expander. The new layout makes
     both paths first-class so a first-time clinician testing with a sample
     recording sees upload immediately."""
     cols = st.columns([1, 1])
-    with cols[0], st.container(border=True):
-        st.markdown("**Record this visit**")
-        st.caption("Click the mic to start, click again to stop. Audio stays on this device.")
-        recorded = st.audio_input(
-            "Record audio",
-            label_visibility="collapsed",
-            key="audio_input_widget",
-        )
-        if recorded is not None and _handle_upload(recorded):
-            st.rerun()
-    with cols[1], st.container(border=True):
-        st.markdown("**Upload a recording**")
-        st.caption("WAV, MP3, FLAC, or M4A. Max 100 MB.")
-        uploaded = st.file_uploader(
-            "Audio file",
-            type=["wav", "mp3", "flac", "m4a"],
-            label_visibility="collapsed",
-            key="file_uploader_widget",
-        )
-        if uploaded is not None and _handle_upload(uploaded):
-            st.rerun()
+    with cols[0]:  # noqa: SIM117
+        with st.container(border=True):
+            st.markdown("**Record this visit**")
+            st.caption("Click the mic to start, click again to stop. Audio stays on this device.")
+            recorded = st.audio_input(
+                "Record audio",
+                label_visibility="collapsed",
+                key="audio_input_widget",
+            )
+            if recorded is not None and _handle_upload(recorded):
+                st.rerun()
+    with cols[1]:  # noqa: SIM117
+        with st.container(border=True):
+            st.markdown("**Upload a recording**")
+            st.caption("WAV, MP3, FLAC, or M4A. Max 100 MB.")
+            uploaded = st.file_uploader(
+                "Audio file",
+                type=["wav", "mp3", "flac", "m4a"],
+                label_visibility="collapsed",
+                key="file_uploader_widget",
+            )
+            if uploaded is not None and _handle_upload(uploaded):
+                st.rerun()
 
 
 def _render_transcript_tab(asr_pipe) -> None:
