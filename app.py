@@ -651,6 +651,8 @@ def _render_soap_pane(model, tokenizer) -> None:
         buf = ""
         meta: dict[str, object] = {}
         last_complete_count = 0
+        # Guard the status DOM update — without this we'd re-render the
+        # markdown every chunk (dozens per section), which is visibly stuttery.
         last_status: str | None = None
         try:
             for chunk in stream_soap(
