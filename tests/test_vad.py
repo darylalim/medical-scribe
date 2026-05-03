@@ -191,3 +191,54 @@ def test_trim_silence_never_raises(mocker, failure_point):
     # The assertion is that this does not raise.
     result = trim_silence(bytes_arg, model=mocker.MagicMock())
     assert isinstance(result, TrimResult)
+
+
+def test_trim_silence_threads_default_thresholds_to_get_speech_timestamps(mocker):
+    """Drift guard: the project-conservative defaults (min_silence=300ms,
+    pad=100ms) must reach get_speech_timestamps unchanged. Catches a
+    regression where someone bumps the upstream defaults via a
+    well-meaning refactor."""
+    audio = np.zeros(VAD_SR, dtype=np.float32)
+    input_bytes = _wav_bytes(audio)
+    gst_mock = mocker.patch(
+        "medical_scribe.vad.get_speech_timestamps",
+        return_value=[],
+    )
+
+    from medical_scribe.vad import trim_silence
+
+    trim_silence(input_bytes, model=mocker.MagicMock())
+
+    _, kwargs = gst_mock.call_args
+    assert kwargs["threshold"] == 0.5
+    assert kwargs["sampling_rate"] == 16000
+    assert kwargs["min_speech_duration_ms"] == 250
+    assert kwargs["min_silence_duration_ms"] == 300
+    assert kwargs["speech_pad_ms"] == 100
+
+
+def test_trim_silence_threads_overridden_thresholds_to_get_speech_timestamps(mocker):
+    """Overrides via keyword arguments propagate."""
+    audio = np.zeros(VAD_SR, dtype=np.float32)
+    input_bytes = _wav_bytes(audio)
+    gst_mock = mocker.patch(
+        "medical_scribe.vad.get_speech_timestamps",
+        return_value=[],
+    )
+
+    from medical_scribe.vad import trim_silence
+
+    trim_silence(
+        input_bytes,
+        model=mocker.MagicMock(),
+        threshold=0.7,
+        min_speech_duration_ms=500,
+        min_silence_duration_ms=200,
+        speech_pad_ms=50,
+    )
+
+    _, kwargs = gst_mock.call_args
+    assert kwargs["threshold"] == 0.7
+    assert kwargs["min_speech_duration_ms"] == 500
+    assert kwargs["min_silence_duration_ms"] == 200
+    assert kwargs["speech_pad_ms"] == 50
