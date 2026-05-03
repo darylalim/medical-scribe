@@ -1,7 +1,7 @@
 [project]
 name = "medical-scribe"
 version = "0.5.0"
-description = "Local-first pipeline for Apple Silicon: MedASR transcription + MedGemma SOAP-note drafts."
+description = "Local-first pipeline for Apple Silicon: VAD-trimmed MedASR transcription + MedGemma SOAP-note drafts."
 requires-python = ">=3.10,<3.13"
 dependencies = [
     # ML / inference. transformers pinned to a v5.0+ commit — MedASR isn't compatible

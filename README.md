@@ -63,6 +63,7 @@ To retry with a different draft, edit the transcript and click **Regenerate SOAP
 ## Notes
 
 - Input audio is resampled to 16 kHz mono automatically.
+- Silence is trimmed via [Silero VAD](https://github.com/snakers4/silero-vad) before MedASR runs; the audio player still shows the original recording for verification.
 - MedGemma-27B at 4-bit needs ~14 GB of unified memory. 32 GB+ Apple Silicon is comfortable; 16 GB may thrash.
 
 ## Project layout
@@ -75,6 +76,7 @@ medical_scribe/            # backend package (no streamlit)
   llm.py                   # MedGemma loader + stream_soap
   prompts.py               # SOAP system prompt + message formatter
   soap_sections.py         # parse / assemble / clipboard-format SOAP markdown
+  vad.py                   # Silero VAD loader + trim_silence (TrimResult; never raises)
 app.py                     # Streamlit UI (single entry point)
 .streamlit/config.toml     # server config (maxUploadSize = 100 MB)
 tests/
