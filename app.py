@@ -37,6 +37,7 @@ from medical_scribe import (  # noqa: E402
     pick_device,
     stream_soap,
     transcribe,
+    trim_silence,
 )
 
 ASR_MODEL = "google/medasr"
@@ -578,15 +579,20 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
     mime = audio_mime_from_name(st.session_state["audio_name"])
     st.audio(audio_bytes, format=mime if mime is not None else "audio/wav")
 
-    # State B: transcribing.
+    # State B: transcribing. trim_silence runs first to drop non-speech
+    # segments before MedASR sees the audio. trim_silence never raises
+    # (medical_scribe.vad invariant); failures return status="error" and
+    # the original bytes pass through unchanged.
     if tx is None:
-        with st.spinner("Transcribing audio…"):
+        with st.spinner("Trimming silence and transcribing audio…"):
+            trim_result = trim_silence(audio_bytes, vad_model)
             try:
-                text = transcribe(asr_pipe, audio_bytes)
+                text = transcribe(asr_pipe, trim_result.audio_bytes)
             except Exception as exc:
                 show_error("Could not transcribe audio", exc)
                 reset_state()
                 st.stop()
+        st.session_state["tx_trim"] = trim_result
         st.session_state["tx"] = text
         st.session_state["tx_edit"] = text
         st.rerun()
