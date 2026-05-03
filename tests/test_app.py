@@ -571,6 +571,74 @@ def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
     )
 
 
+def test_state_c_renders_trim_caption_when_present(booted_app):
+    """When tx_trim is populated with a 'trimmed' status above the 5%
+    threshold, the caption renders above the transcript text area."""
+    from medical_scribe import TrimResult
+
+    at = booted_app
+    _seed_state_c(at)
+    at.session_state["tx_trim"] = TrimResult(
+        audio_bytes=b"fake-trimmed",
+        original_seconds=536.0,
+        trimmed_seconds=284.0,
+        status="trimmed",
+    )
+    at.run(timeout=30)
+    assert not at.exception, f"render raised: {at.exception}"
+
+    caption_texts = [c.value for c in at.caption]
+    assert any("Trimmed 4m 12s of silence" in text for text in caption_texts), (
+        f"expected trim caption above transcript; saw captions: {caption_texts!r}"
+    )
+
+
+def test_state_c_suppresses_trim_caption_below_5_percent(booted_app):
+    """When the trim ratio is below the 5% noise floor, format_trim_caption
+    returns None and the caption block doesn't render — locks the
+    declutter behavior in spec §5.5."""
+    from medical_scribe import TrimResult
+
+    at = booted_app
+    _seed_state_c(at)
+    at.session_state["tx_trim"] = TrimResult(
+        audio_bytes=b"fake",
+        original_seconds=100.0,
+        trimmed_seconds=98.0,  # 2% trim
+        status="trimmed",
+    )
+    at.run(timeout=30)
+    assert not at.exception
+
+    caption_texts = [c.value for c in at.caption]
+    assert not any("Trimmed" in text for text in caption_texts), (
+        f"caption should be suppressed below 5% trim; saw captions: {caption_texts!r}"
+    )
+
+
+def test_state_c_renders_error_caption_when_status_error(booted_app):
+    """When tx_trim status is 'error', the fallback caption renders so the
+    user knows VAD failed but transcription still proceeded."""
+    from medical_scribe import TrimResult
+
+    at = booted_app
+    _seed_state_c(at)
+    at.session_state["tx_trim"] = TrimResult(
+        audio_bytes=b"fake",
+        original_seconds=0.0,
+        trimmed_seconds=0.0,
+        status="error",
+        error="RuntimeError: boom",
+    )
+    at.run(timeout=30)
+    assert not at.exception
+
+    caption_texts = [c.value for c in at.caption]
+    assert any("Couldn't trim silence" in text for text in caption_texts), (
+        f"expected error caption; saw: {caption_texts!r}"
+    )
+
+
 def test_initial_state_excludes_active_tab_and_is_editing():
     """Drift guard against accidental re-introduction. Both keys were
     removed in the split-view redesign — `active_tab` because tabs are gone,

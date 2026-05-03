@@ -579,6 +579,12 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
     mime = audio_mime_from_name(st.session_state["audio_name"])
     st.audio(audio_bytes, format=mime if mime is not None else "audio/wav")
 
+    # Trim status caption. format_trim_caption returns None when there's
+    # nothing to render (no result, or trim < 5%) so the layout stays clean.
+    caption = format_trim_caption(st.session_state.get("tx_trim"))
+    if caption is not None:
+        st.caption(caption)
+
     # State B: transcribing. trim_silence runs first to drop non-speech
     # segments before MedASR sees the audio. trim_silence never raises
     # (medical_scribe.vad invariant); failures return status="error" and
