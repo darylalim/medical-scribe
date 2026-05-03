@@ -119,3 +119,75 @@ def test_trim_silence_returns_status_no_speech_when_vad_finds_nothing(mocker):
     assert result.audio_bytes is input_bytes
     assert abs(result.original_seconds - 2.0) < 0.01
     assert result.trimmed_seconds == result.original_seconds
+
+
+def test_trim_silence_returns_status_error_on_decode_failure(mocker):
+    """Garbage input bytes that librosa can't decode → status='error',
+    audio_bytes passed through by identity, error populated, no exception."""
+    from medical_scribe.vad import trim_silence
+
+    garbage = b"this is not a wav file"
+    result = trim_silence(garbage, model=mocker.MagicMock())
+
+    assert result.status == "error"
+    assert result.audio_bytes is garbage
+    assert result.error is not None and len(result.error) > 0
+
+
+def test_trim_silence_returns_status_error_on_vad_exception(mocker):
+    """VAD itself raises → same fallback shape (no exception escapes)."""
+    audio = np.zeros(VAD_SR, dtype=np.float32)
+    input_bytes = _wav_bytes(audio)
+
+    mocker.patch(
+        "medical_scribe.vad.get_speech_timestamps",
+        side_effect=RuntimeError("model OOM"),
+    )
+
+    from medical_scribe.vad import trim_silence
+
+    result = trim_silence(input_bytes, model=mocker.MagicMock())
+
+    assert result.status == "error"
+    assert result.audio_bytes is input_bytes
+    assert "RuntimeError" in (result.error or "")
+    assert "model OOM" in (result.error or "")
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    ["decode", "vad", "encode"],
+    ids=["decode_failure", "vad_failure", "encode_failure"],
+)
+def test_trim_silence_never_raises(mocker, failure_point):
+    """Defensive contract: regardless of which step fails, trim_silence
+    returns a TrimResult — never raises. _render_transcript_pane in app.py
+    relies on this; do not weaken it."""
+    from medical_scribe.vad import trim_silence
+
+    audio = np.zeros(VAD_SR, dtype=np.float32)
+    input_bytes = _wav_bytes(audio)
+
+    if failure_point == "decode":
+        bytes_arg = b"garbage"
+        mocker.patch("medical_scribe.vad.get_speech_timestamps", return_value=[])
+    elif failure_point == "vad":
+        bytes_arg = input_bytes
+        mocker.patch(
+            "medical_scribe.vad.get_speech_timestamps",
+            side_effect=RuntimeError("vad bang"),
+        )
+    else:  # encode
+        bytes_arg = input_bytes
+        mocker.patch(
+            "medical_scribe.vad.get_speech_timestamps",
+            return_value=[{"start": 0, "end": VAD_SR}],
+        )
+        mocker.patch(
+            "medical_scribe.vad.sf.write",
+            side_effect=RuntimeError("encode bang"),
+        )
+
+    # The assertion is that this does not raise.
+    result = trim_silence(bytes_arg, model=mocker.MagicMock())
+    assert isinstance(result, TrimResult)
