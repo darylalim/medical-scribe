@@ -28,6 +28,7 @@ from medical_scribe import (  # noqa: E402
     DEFAULT_MODEL_ID,
     SECTION_HEADER_RE,
     SOAP_SECTIONS,
+    TrimResult,
     format_for_clipboard,
     load_asr_pipeline,
     load_medgemma,
@@ -207,6 +208,49 @@ def streaming_status_label(section_names: list[str]) -> str:
     if not section_names:
         return "Generating…"
     return f"Drafting {section_names[-1]}…"
+
+
+def _format_duration(seconds: float) -> str:
+    """Format a non-negative duration in seconds as 'Xm Ys' (under 1 hour)
+    or 'Xh Ym' (1 hour or longer). Used by format_trim_caption."""
+    total = round(seconds)
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h {m}m"
+    return f"{m}m {s}s"
+
+
+def format_trim_caption(
+    result: TrimResult | None,
+    *,
+    min_ratio: float = 0.05,
+) -> str | None:
+    """Caption above the transcript text area. Returns None when nothing
+    should render (no result yet, or trim ratio below the noise floor).
+
+    Three rendered branches:
+      - status="trimmed", ratio >= min_ratio:
+          "Trimmed 4m 12s of silence (47% of recording)."
+      - status="no_speech":
+          "Couldn't detect speech; transcribing the full recording instead."
+      - status="error":
+          "Couldn't trim silence; transcribing the full recording instead."
+    """
+    if result is None:
+        return None
+    if result.status == "no_speech":
+        return "Couldn't detect speech; transcribing the full recording instead."
+    if result.status == "error":
+        return "Couldn't trim silence; transcribing the full recording instead."
+    # status == "trimmed"
+    if result.original_seconds <= 0:
+        return None
+    ratio = 1.0 - (result.trimmed_seconds / result.original_seconds)
+    if ratio < min_ratio:
+        return None
+    removed = result.original_seconds - result.trimmed_seconds
+    return f"Trimmed {_format_duration(removed)} of silence ({round(ratio * 100)}% of recording)."
 
 
 def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:

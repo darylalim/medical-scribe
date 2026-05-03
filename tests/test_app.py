@@ -736,3 +736,91 @@ def test_truncation_warning_renders_when_flagged(booted_app):
         f"truncation warning should render when soap_truncated=True; "
         f"saw warnings: {warning_texts!r}"
     )
+
+
+def test_format_trim_caption_returns_none_for_no_result():
+    from app import format_trim_caption
+
+    assert format_trim_caption(None) is None
+
+
+@pytest.mark.parametrize(
+    ("original", "trimmed", "expected"),
+    [
+        # 8m 56s → 4m 44s = 4m 12s removed (47%)
+        (536.0, 284.0, "Trimmed 4m 12s of silence (47% of recording)."),
+        # 1m → 30s = 30s removed (50%)
+        (60.0, 30.0, "Trimmed 0m 30s of silence (50% of recording)."),
+        # 13m → 1m = 12m removed (92%)
+        (780.0, 60.0, "Trimmed 12m 0s of silence (92% of recording)."),
+        # 2h 10m → 1h 5m = 1h 5m removed (50%)
+        (7800.0, 3900.0, "Trimmed 1h 5m of silence (50% of recording)."),
+    ],
+    ids=["typical_47pct", "short_30s", "twelve_min_zero_sec", "over_one_hour"],
+)
+def test_format_trim_caption_status_trimmed_above_threshold(original, trimmed, expected):
+    from app import format_trim_caption
+    from medical_scribe import TrimResult
+
+    result = TrimResult(
+        audio_bytes=b"x",
+        original_seconds=original,
+        trimmed_seconds=trimmed,
+        status="trimmed",
+    )
+    assert format_trim_caption(result) == expected
+
+
+@pytest.mark.parametrize(
+    ("original", "trimmed"),
+    [
+        (100.0, 98.0),  # 2% trim
+        (100.0, 96.0),  # 4% trim
+        (100.0, 100.0),  # 0% trim
+    ],
+    ids=["two_percent", "four_percent", "zero_percent"],
+)
+def test_format_trim_caption_suppresses_below_5_percent(original, trimmed):
+    """When trim ratio < 5%, the caption is suppressed (returns None) to
+    avoid visual clutter for recordings that were already mostly speech."""
+    from app import format_trim_caption
+    from medical_scribe import TrimResult
+
+    result = TrimResult(
+        audio_bytes=b"x",
+        original_seconds=original,
+        trimmed_seconds=trimmed,
+        status="trimmed",
+    )
+    assert format_trim_caption(result) is None
+
+
+def test_format_trim_caption_no_speech_returns_fallback_message():
+    from app import format_trim_caption
+    from medical_scribe import TrimResult
+
+    result = TrimResult(
+        audio_bytes=b"x",
+        original_seconds=10.0,
+        trimmed_seconds=10.0,
+        status="no_speech",
+    )
+    assert format_trim_caption(result) == (
+        "Couldn't detect speech; transcribing the full recording instead."
+    )
+
+
+def test_format_trim_caption_error_returns_fallback_message():
+    from app import format_trim_caption
+    from medical_scribe import TrimResult
+
+    result = TrimResult(
+        audio_bytes=b"x",
+        original_seconds=0.0,
+        trimmed_seconds=0.0,
+        status="error",
+        error="RuntimeError: boom",
+    )
+    assert format_trim_caption(result) == (
+        "Couldn't trim silence; transcribing the full recording instead."
+    )
