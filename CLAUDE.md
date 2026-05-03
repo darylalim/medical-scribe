@@ -8,12 +8,13 @@ Local-first pipeline for Apple Silicon. Capture a physician-patient visit (live 
   - `__init__.py` — re-exports the public API. `__all__` is the canonical surface.
   - `device.py` — `pick_device()` for PyTorch (CUDA → MPS → CPU).
   - `asr.py` — MedASR pipeline loader + `transcribe()` helper.
+  - `vad.py` — Silero VAD loader + `trim_silence()` returning a `TrimResult` (pre-ASR silence trim; never raises).
   - `llm.py` — MedGemma MLX loader + `stream_soap()` generator.
   - `prompts.py` — SOAP system prompt + `format_soap_messages()`.
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
 - `app.py` — Streamlit UI; the only file that imports `streamlit`. Five-state machine (A: no audio → B: transcribing → C: transcript ready → D: streaming SOAP → E: SOAP-ready/editable) with a global sidebar (`+ New session`). From State B onward the UI shell is a persistent vertical split (transcript left, SOAP right); the SOAP pane has four sub-renders — "Awaiting transcript" (B), "Click Generate" placeholder (C), streaming cards (D), and editable cards (E).
 - `.streamlit/config.toml` — server config; caps upload at `maxUploadSize = 100` MB.
-- `tests/` — ~100 unit tests + 1 gated integration test.
+- `tests/` — ~130 unit tests + 1 gated integration test.
 
 ## Commands
 

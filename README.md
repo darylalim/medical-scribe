@@ -86,6 +86,7 @@ tests/
   test_llm.py              # load_medgemma + stream_soap
   test_prompts.py          # SOAP prompt + format_soap_messages
   test_soap_sections.py    # parse_soap_sections + assemble_soap + format_for_clipboard
+  test_vad.py              # load_vad + trim_silence + never-raises contract
 ```
 
 ## Development
@@ -116,7 +117,7 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                                # ~100 unit tests
+uv run pytest                                                # ~130 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                                 # real-model integration test
 ```
