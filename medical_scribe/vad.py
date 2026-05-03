@@ -12,6 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import torch
+from silero_vad import load_silero_vad
+
 
 @dataclass(frozen=True)
 class TrimResult:
@@ -20,3 +23,7 @@ class TrimResult:
     trimmed_seconds: float
     status: Literal["trimmed", "no_speech", "error"]
     error: str | None = None
+
+
+def load_vad() -> torch.nn.Module:
+    return load_silero_vad()

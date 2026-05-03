@@ -44,3 +44,18 @@ def test_trim_result_is_immutable():
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.status = "error"  # type: ignore[misc]
+
+
+def test_load_vad_calls_load_silero_vad(mocker):
+    fake_model = object()
+    load_mock = mocker.patch(
+        "medical_scribe.vad.load_silero_vad",
+        return_value=fake_model,
+    )
+
+    from medical_scribe.vad import load_vad
+
+    result = load_vad()
+
+    assert result is fake_model
+    load_mock.assert_called_once_with()
