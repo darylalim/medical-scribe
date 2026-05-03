@@ -32,6 +32,7 @@ from medical_scribe import (  # noqa: E402
     format_for_clipboard,
     load_asr_pipeline,
     load_medgemma,
+    load_vad,
     parse_soap_sections,
     pick_device,
     stream_soap,
@@ -361,6 +362,11 @@ def _llm():
     return load_medgemma(DEFAULT_MODEL_ID)
 
 
+@st.cache_resource
+def _vad():
+    return load_vad()
+
+
 def show_error(label: str, exc: BaseException) -> None:
     traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
     st.error(f"{label}: {type(exc).__name__}: {exc}")
@@ -551,7 +557,7 @@ def _render_state_a_chooser() -> None:
                 st.rerun()
 
 
-def _render_transcript_pane(asr_pipe) -> None:
+def _render_transcript_pane(asr_pipe, vad_model) -> None:
     """Left pane of State C split view: audio player + editable transcript +
     Generate / Regenerate button.
 
@@ -755,7 +761,7 @@ def _render_soap_pane(model, tokenizer) -> None:
         )
 
 
-def _render_split_view(asr_pipe, model, tokenizer) -> None:
+def _render_split_view(asr_pipe, vad_model, model, tokenizer) -> None:
     """States B and beyond: persistent vertical split (transcript left,
     SOAP right). Each pane handles its own state-aware sub-render.
 
@@ -769,7 +775,7 @@ def _render_split_view(asr_pipe, model, tokenizer) -> None:
     with cols[1]:
         _render_soap_pane(model, tokenizer)
     with cols[0]:
-        _render_transcript_pane(asr_pipe)
+        _render_transcript_pane(asr_pipe, vad_model)
 
 
 def main() -> None:
@@ -793,6 +799,11 @@ def main() -> None:
         except Exception as exc:
             show_error("Failed to load MedGemma", exc)
             st.stop()
+        try:
+            vad_model = _vad()
+        except Exception as exc:
+            show_error("Failed to load Silero VAD", exc)
+            st.stop()
 
     _render_header()
     _render_sidebar()
@@ -802,7 +813,7 @@ def main() -> None:
     if st.session_state["audio_bytes"] is None:
         _render_state_a_chooser()
     else:
-        _render_split_view(asr_pipe, model, tokenizer)
+        _render_split_view(asr_pipe, vad_model, model, tokenizer)
 
 
 if __name__ == "__main__":

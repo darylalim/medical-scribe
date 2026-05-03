@@ -23,6 +23,7 @@ def booted_app(mocker, monkeypatch):
         "app.load_medgemma",
         return_value=(mocker.MagicMock(), mocker.MagicMock()),
     )
+    mocker.patch("app.load_vad", return_value=mocker.MagicMock())
 
     from streamlit.testing.v1 import AppTest
 
@@ -640,7 +641,7 @@ def test_state_b_right_pane_shows_awaiting_transcript_placeholder(booted_app, mo
     Stubs out _render_transcript_pane so the test can observe State B without
     the synchronous transcribe call advancing immediately to State C."""
     at = booted_app
-    mocker.patch("app._render_transcript_pane", lambda asr_pipe: None)
+    mocker.patch("app._render_transcript_pane", lambda asr_pipe, vad_model: None)
     for key, value in _FAKE_AUDIO_STATE.items():
         at.session_state[key] = value
     # tx stays None — State B
