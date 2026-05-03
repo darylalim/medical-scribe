@@ -20,18 +20,22 @@ from medical_scribe.soap_sections import (
     format_for_clipboard,
     parse_soap_sections,
 )
+from medical_scribe.vad import TrimResult, load_vad, trim_silence
 
 __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_MODEL_ID",
     "SECTION_HEADER_RE",
     "SOAP_SECTIONS",
+    "TrimResult",
     "assemble_soap",
     "format_for_clipboard",
     "load_asr_pipeline",
     "load_medgemma",
+    "load_vad",
     "parse_soap_sections",
     "pick_device",
     "stream_soap",
     "transcribe",
+    "trim_silence",
 ]

@@ -7,7 +7,7 @@ definition. Catches re-export drift (renames, removals, accidental wrappers)."""
 from __future__ import annotations
 
 import medical_scribe
-from medical_scribe import asr, device, llm, soap_sections
+from medical_scribe import asr, device, llm, soap_sections, vad
 
 
 def test_package_reexports_match_module_level_definitions():
@@ -16,14 +16,17 @@ def test_package_reexports_match_module_level_definitions():
         "DEFAULT_MODEL_ID": llm.DEFAULT_MODEL_ID,
         "SECTION_HEADER_RE": soap_sections.SECTION_HEADER_RE,
         "SOAP_SECTIONS": soap_sections.SOAP_SECTIONS,
+        "TrimResult": vad.TrimResult,
         "assemble_soap": soap_sections.assemble_soap,
         "format_for_clipboard": soap_sections.format_for_clipboard,
         "load_asr_pipeline": asr.load_asr_pipeline,
         "load_medgemma": llm.load_medgemma,
+        "load_vad": vad.load_vad,
         "parse_soap_sections": soap_sections.parse_soap_sections,
         "pick_device": device.pick_device,
         "stream_soap": llm.stream_soap,
         "transcribe": asr.transcribe,
+        "trim_silence": vad.trim_silence,
     }
     for name, canonical in expected.items():
         assert getattr(medical_scribe, name) is canonical, (
