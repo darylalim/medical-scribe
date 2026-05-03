@@ -76,6 +76,9 @@ INITIAL_STATE = {
     # Transcript
     "tx": None,
     "tx_edit": "",
+    # VAD trim metadata. Populated alongside `tx` in State B's _render_transcript_pane;
+    # consumed by format_trim_caption to render the status line above the transcript.
+    "tx_trim": None,
     # SOAP — full markdown blob, source of truth
     "soap": None,
     "soap_truncated": False,
@@ -112,10 +115,12 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
 
     Stage-orthogonal flags (e.g., `_streaming`, `_show_reset_dialog`)
     survive both clear paths — they don't pertain to the audio/transcript/
-    SOAP pipeline."""
+    SOAP pipeline. `tx_trim` survives the `after="tx"` path: editing the
+    transcript doesn't change what VAD saw."""
     if after == "audio":
         state["tx"] = None
         state["tx_edit"] = ""
+        state["tx_trim"] = None
         state["soap"] = None
         state["soap_truncated"] = False
         state["subjective_edit"] = ""

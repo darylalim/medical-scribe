@@ -81,6 +81,7 @@ def _fresh_state() -> dict:
         "audio_hash": "deadbeef",
         "tx": "some transcript",
         "tx_edit": "edited transcript",
+        "tx_trim": "fake_trim_sentinel",
         "soap": "generated soap",
         "soap_truncated": True,
         "subjective_edit": "edited s",
@@ -107,6 +108,7 @@ def test_clear_downstream_state_after_audio_wipes_transcript_and_soap():
     # Cleared (downstream of new audio).
     assert state["tx"] is None
     assert state["tx_edit"] == ""
+    assert state["tx_trim"] is None
     assert state["soap"] is None
     assert state["soap_truncated"] is False
     assert state["subjective_edit"] == ""
@@ -125,6 +127,7 @@ def test_clear_downstream_state_after_tx_wipes_only_soap():
     assert state["audio_bytes"] == b"abc"
     assert state["tx"] == "some transcript"
     assert state["tx_edit"] == "edited transcript"
+    assert state["tx_trim"] == "fake_trim_sentinel"
     assert state["_streaming"] is True
     assert state["_show_reset_dialog"] is True
     # Cleared (downstream of transcript edits).
@@ -824,3 +827,13 @@ def test_format_trim_caption_error_returns_fallback_message():
     assert format_trim_caption(result) == (
         "Couldn't trim silence; transcribing the full recording instead."
     )
+
+
+def test_initial_state_includes_tx_trim_default_none():
+    """Drift guard: the new tx_trim key must default to None (matches
+    Streamlit's session_state.get(...) None branch in _render_transcript_pane).
+    Catches a regression where someone defaults it to an empty TrimResult."""
+    from app import INITIAL_STATE
+
+    assert "tx_trim" in INITIAL_STATE
+    assert INITIAL_STATE["tx_trim"] is None
