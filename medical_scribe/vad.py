@@ -46,6 +46,10 @@ def trim_silence(
     min_silence_duration_ms: int = 300,
     speech_pad_ms: int = 100,
 ) -> TrimResult:
+    # Tracked outside the try so the error path can still report whatever
+    # was successfully measured before the failure (e.g. decode succeeded
+    # but VAD raised → original_seconds is known).
+    original_seconds = 0.0
     try:
         audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=VAD_SR, mono=True)
         original_seconds = len(audio) / VAD_SR
@@ -80,7 +84,7 @@ def trim_silence(
         traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
         return TrimResult(
             audio_bytes=audio_bytes,
-            original_seconds=0.0,
+            original_seconds=original_seconds,
             trimmed_seconds=0.0,
             status="error",
             error=f"{type(exc).__name__}: {exc}",

@@ -819,6 +819,8 @@ def test_format_trim_caption_returns_none_for_no_result():
 @pytest.mark.parametrize(
     ("original", "trimmed", "expected"),
     [
+        # 100s → 95s = 5s removed (5%) — exactly at the 5% suppression threshold
+        (100.0, 95.0, "Trimmed 0m 5s of silence (5% of recording)."),
         # 8m 56s → 4m 44s = 4m 12s removed (47%)
         (536.0, 284.0, "Trimmed 4m 12s of silence (47% of recording)."),
         # 1m → 30s = 30s removed (50%)
@@ -828,7 +830,13 @@ def test_format_trim_caption_returns_none_for_no_result():
         # 2h 10m → 1h 5m = 1h 5m removed (50%)
         (7800.0, 3900.0, "Trimmed 1h 5m of silence (50% of recording)."),
     ],
-    ids=["typical_47pct", "short_30s", "twelve_min_zero_sec", "over_one_hour"],
+    ids=[
+        "five_percent_boundary",
+        "typical_47pct",
+        "short_30s",
+        "twelve_min_zero_sec",
+        "over_one_hour",
+    ],
 )
 def test_format_trim_caption_status_trimmed_above_threshold(original, trimmed, expected):
     from app import format_trim_caption
@@ -896,6 +904,25 @@ def test_format_trim_caption_error_returns_fallback_message():
     assert format_trim_caption(result) == (
         "Couldn't trim silence; transcribing the full recording instead."
     )
+
+
+def test_format_trim_caption_min_ratio_override():
+    """The `min_ratio` parameter overrides the default 5% suppression
+    threshold. Pinning this prevents a regression where the parameter
+    becomes inert (silently ignored)."""
+    from app import format_trim_caption
+    from medical_scribe import TrimResult
+
+    result = TrimResult(
+        audio_bytes=b"x",
+        original_seconds=100.0,
+        trimmed_seconds=90.0,  # 10% trim
+        status="trimmed",
+    )
+    # Default min_ratio=0.05: 10% > 5%, renders.
+    assert format_trim_caption(result) is not None
+    # Explicit min_ratio=0.20: 10% < 20%, suppressed.
+    assert format_trim_caption(result, min_ratio=0.20) is None
 
 
 def test_initial_state_includes_tx_trim_default_none():

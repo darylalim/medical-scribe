@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from medical_scribe.vad import TrimResult
+from medical_scribe.vad import TrimResult, load_vad, trim_silence
 
 VAD_SR = 16000
 
@@ -64,8 +64,6 @@ def test_load_vad_calls_load_silero_vad(mocker):
         return_value=fake_model,
     )
 
-    from medical_scribe.vad import load_vad
-
     result = load_vad()
 
     assert result is fake_model
@@ -85,9 +83,7 @@ def test_trim_silence_returns_status_trimmed_with_speech_only_audio(mocker):
         return_value=[{"start": VAD_SR, "end": 2 * VAD_SR}],
     )
 
-    from medical_scribe.vad import trim_silence
-
-    result = trim_silence(input_bytes, model=mocker.MagicMock())
+    result = trim_silence(input_bytes, mocker.MagicMock())
 
     assert result.status == "trimmed"
     assert result.error is None
@@ -98,7 +94,7 @@ def test_trim_silence_returns_status_trimmed_with_speech_only_audio(mocker):
     assert len(result.audio_bytes) < len(input_bytes)
     decoded, sr = sf.read(io.BytesIO(result.audio_bytes))
     assert sr == VAD_SR
-    assert abs(len(decoded) - VAD_SR) < 100  # ~1 s of audio
+    assert abs(len(decoded) - VAD_SR) < 100  # ~1 s of audio (header / encoder padding tolerance)
 
 
 def test_trim_silence_returns_status_no_speech_when_vad_finds_nothing(mocker):
@@ -110,9 +106,7 @@ def test_trim_silence_returns_status_no_speech_when_vad_finds_nothing(mocker):
 
     mocker.patch("medical_scribe.vad.get_speech_timestamps", return_value=[])
 
-    from medical_scribe.vad import trim_silence
-
-    result = trim_silence(input_bytes, model=mocker.MagicMock())
+    result = trim_silence(input_bytes, mocker.MagicMock())
 
     assert result.status == "no_speech"
     assert result.error is None
@@ -123,19 +117,21 @@ def test_trim_silence_returns_status_no_speech_when_vad_finds_nothing(mocker):
 
 def test_trim_silence_returns_status_error_on_decode_failure(mocker):
     """Garbage input bytes that librosa can't decode → status='error',
-    audio_bytes passed through by identity, error populated, no exception."""
-    from medical_scribe.vad import trim_silence
-
+    audio_bytes passed through by identity, error populated, no exception.
+    original_seconds stays at 0.0 because decode never completed."""
     garbage = b"this is not a wav file"
-    result = trim_silence(garbage, model=mocker.MagicMock())
+    result = trim_silence(garbage, mocker.MagicMock())
 
     assert result.status == "error"
     assert result.audio_bytes is garbage
     assert result.error is not None and len(result.error) > 0
+    assert result.original_seconds == 0.0
 
 
 def test_trim_silence_returns_status_error_on_vad_exception(mocker):
-    """VAD itself raises → same fallback shape (no exception escapes)."""
+    """VAD itself raises → same fallback shape (no exception escapes).
+    Decode completed before the failure, so original_seconds is preserved
+    in the error result."""
     audio = np.zeros(VAD_SR, dtype=np.float32)
     input_bytes = _wav_bytes(audio)
 
@@ -144,14 +140,13 @@ def test_trim_silence_returns_status_error_on_vad_exception(mocker):
         side_effect=RuntimeError("model OOM"),
     )
 
-    from medical_scribe.vad import trim_silence
-
-    result = trim_silence(input_bytes, model=mocker.MagicMock())
+    result = trim_silence(input_bytes, mocker.MagicMock())
 
     assert result.status == "error"
     assert result.audio_bytes is input_bytes
     assert "RuntimeError" in (result.error or "")
     assert "model OOM" in (result.error or "")
+    assert abs(result.original_seconds - 1.0) < 0.01
 
 
 @pytest.mark.parametrize(
@@ -163,8 +158,6 @@ def test_trim_silence_never_raises(mocker, failure_point):
     """Defensive contract: regardless of which step fails, trim_silence
     returns a TrimResult — never raises. _render_transcript_pane in app.py
     relies on this; do not weaken it."""
-    from medical_scribe.vad import trim_silence
-
     audio = np.zeros(VAD_SR, dtype=np.float32)
     input_bytes = _wav_bytes(audio)
 
@@ -189,7 +182,7 @@ def test_trim_silence_never_raises(mocker, failure_point):
         )
 
     # The assertion is that this does not raise.
-    result = trim_silence(bytes_arg, model=mocker.MagicMock())
+    result = trim_silence(bytes_arg, mocker.MagicMock())
     assert isinstance(result, TrimResult)
 
 
@@ -205,9 +198,7 @@ def test_trim_silence_threads_default_thresholds_to_get_speech_timestamps(mocker
         return_value=[],
     )
 
-    from medical_scribe.vad import trim_silence
-
-    trim_silence(input_bytes, model=mocker.MagicMock())
+    trim_silence(input_bytes, mocker.MagicMock())
 
     _, kwargs = gst_mock.call_args
     assert kwargs["threshold"] == 0.5
@@ -226,11 +217,9 @@ def test_trim_silence_threads_overridden_thresholds_to_get_speech_timestamps(moc
         return_value=[],
     )
 
-    from medical_scribe.vad import trim_silence
-
     trim_silence(
         input_bytes,
-        model=mocker.MagicMock(),
+        mocker.MagicMock(),
         threshold=0.7,
         min_speech_duration_ms=500,
         min_silence_duration_ms=200,

@@ -219,7 +219,7 @@ def streaming_status_label(section_names: list[str]) -> str:
 
 def _format_duration(seconds: float) -> str:
     """Format a non-negative duration in seconds as 'Xm Ys' (under 1 hour)
-    or 'Xh Ym' (1 hour or longer). Used by format_trim_caption."""
+    or 'Xh Ym' (1 hour or longer)."""
     total = round(seconds)
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
@@ -799,7 +799,7 @@ def main() -> None:
     require_hf_token()
 
     # Eager model load — surface any error before the user uploads.
-    # @st.cache_resource on _asr/_llm makes subsequent reruns instant.
+    # @st.cache_resource on _asr/_llm/_vad makes subsequent reruns instant.
     with st.spinner("Loading models (first run downloads ~14 GB; subsequent runs are instant)…"):
         try:
             asr_pipe = _asr()
