@@ -59,6 +59,13 @@ def trim_silence(
             min_silence_duration_ms=min_silence_duration_ms,
             speech_pad_ms=speech_pad_ms,
         )
+        if not ranges:
+            return TrimResult(
+                audio_bytes=audio_bytes,
+                original_seconds=original_seconds,
+                trimmed_seconds=original_seconds,
+                status="no_speech",
+            )
 
         speech = np.concatenate([audio[r["start"] : r["end"]] for r in ranges])
         buf = io.BytesIO()

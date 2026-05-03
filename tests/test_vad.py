@@ -99,3 +99,23 @@ def test_trim_silence_returns_status_trimmed_with_speech_only_audio(mocker):
     decoded, sr = sf.read(io.BytesIO(result.audio_bytes))
     assert sr == VAD_SR
     assert abs(len(decoded) - VAD_SR) < 100  # ~1 s of audio
+
+
+def test_trim_silence_returns_status_no_speech_when_vad_finds_nothing(mocker):
+    """When VAD returns an empty range list, trim_silence falls back to the
+    original bytes (passed through by identity) and reports status='no_speech'.
+    trimmed_seconds must equal original_seconds in this case."""
+    audio = np.zeros(VAD_SR * 2, dtype=np.float32)
+    input_bytes = _wav_bytes(audio)
+
+    mocker.patch("medical_scribe.vad.get_speech_timestamps", return_value=[])
+
+    from medical_scribe.vad import trim_silence
+
+    result = trim_silence(input_bytes, model=mocker.MagicMock())
+
+    assert result.status == "no_speech"
+    assert result.error is None
+    assert result.audio_bytes is input_bytes
+    assert abs(result.original_seconds - 2.0) < 0.01
+    assert result.trimmed_seconds == result.original_seconds
