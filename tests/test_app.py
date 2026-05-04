@@ -1204,6 +1204,7 @@ def test_topbar_meta_renders_in_state_e(booted_app):
     markdown_blocks = [m.value for m in at.markdown]
     joined = "\n".join(markdown_blocks)
     assert "session · 9m 0s · trimmed 53%" in joined
+    assert "SOAP ready" in joined
 
 
 def test_compute_section_states_empty_buffer():
