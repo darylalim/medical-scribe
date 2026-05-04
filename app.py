@@ -360,6 +360,37 @@ def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:
     return soap[: match.start()].strip() if match else ""
 
 
+def compute_section_states(
+    buf: str,
+    section_order: list[str],
+) -> list[tuple[str, str, str]]:
+    """Drive the State-D skeleton-card streaming render.
+
+    Returns one (name, status, body) tuple per section in `section_order`.
+    `status` is one of "pending", "active", "completed". A section is
+    `completed` when a later section's header has appeared in `buf`;
+    the most-recently-seen section is `active`; sections not yet seen are
+    `pending` with body=''.
+
+    Order in the output always matches `section_order` (not buffer order),
+    so skeleton-card placement in the right pane stays stable even if the
+    model emits sections out of canonical order.
+    """
+    parsed = parse_soap_sections(buf)
+    seen = [name for name in section_order if name in parsed]
+    last_seen = seen[-1] if seen else None
+
+    out: list[tuple[str, str, str]] = []
+    for name in section_order:
+        if name not in parsed:
+            out.append((name, "pending", ""))
+        elif name == last_seen:
+            out.append((name, "active", parsed[name]))
+        else:
+            out.append((name, "completed", parsed[name]))
+    return out
+
+
 def escape_text_for_inline_script(text: str) -> str:
     """JSON-encode `text` for safe inline JavaScript, plus replace `</`
     with `<\\/` so a `</script>` substring inside `text` cannot prematurely

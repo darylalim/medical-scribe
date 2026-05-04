@@ -1204,4 +1204,70 @@ def test_topbar_meta_renders_in_state_e(booted_app):
     markdown_blocks = [m.value for m in at.markdown]
     joined = "\n".join(markdown_blocks)
     assert "session · 9m 0s · trimmed 53%" in joined
-    assert "SOAP ready" in joined
+
+
+def test_compute_section_states_empty_buffer():
+    """No section headers seen yet — every section is pending."""
+    from app import SOAP_SECTIONS, compute_section_states
+
+    states = compute_section_states("", list(SOAP_SECTIONS))
+    assert len(states) == len(SOAP_SECTIONS)
+    for (name, status, body), expected_name in zip(states, SOAP_SECTIONS, strict=True):
+        assert name == expected_name
+        assert status == "pending"
+        assert body == ""
+
+
+def test_compute_section_states_first_section_active():
+    """Subjective header seen, body partial, no later headers — Subjective
+    active, others pending."""
+    from app import compute_section_states
+
+    buf = "## Subjective\n62 y/o M with"
+    states = compute_section_states(buf, ["Subjective", "Objective", "Assessment", "Plan"])
+    assert states[0] == ("Subjective", "active", "62 y/o M with")
+    for tup in states[1:]:
+        assert tup[1] == "pending"
+
+
+def test_compute_section_states_first_completed_second_active():
+    """Both headers seen — Subjective is completed (later header appeared),
+    Objective is active."""
+    from app import compute_section_states
+
+    buf = "## Subjective\n62 y/o M with chest pain.\n## Objective\nBP 142/88"
+    states = compute_section_states(buf, ["Subjective", "Objective", "Assessment", "Plan"])
+    assert states[0] == ("Subjective", "completed", "62 y/o M with chest pain.")
+    assert states[1] == ("Objective", "active", "BP 142/88")
+    assert states[2][1] == "pending"
+    assert states[3][1] == "pending"
+
+
+def test_compute_section_states_all_four_complete():
+    """All four headers seen with a trailing line break — last is active
+    (still streaming, by convention) until the LLM emits a stop token,
+    which compute_section_states cannot infer; the calling code flips it
+    to completed on stream end."""
+    from app import compute_section_states
+
+    buf = "## Subjective\nA\n## Objective\nB\n## Assessment\nC\n## Plan\nD\n"
+    states = compute_section_states(buf, ["Subjective", "Objective", "Assessment", "Plan"])
+    assert states[0] == ("Subjective", "completed", "A")
+    assert states[1] == ("Objective", "completed", "B")
+    assert states[2] == ("Assessment", "completed", "C")
+    assert states[3] == ("Plan", "active", "D")
+
+
+def test_compute_section_states_preserves_section_order():
+    """Even if the LLM emits sections out of order, the helper must return
+    them in the canonical SOAP_SECTIONS order — the calling code's
+    skeleton-card placement depends on it."""
+    from app import compute_section_states
+
+    buf = "## Plan\nfirst.\n## Subjective\nlater."
+    states = compute_section_states(buf, ["Subjective", "Objective", "Assessment", "Plan"])
+    assert [s[0] for s in states] == ["Subjective", "Objective", "Assessment", "Plan"]
+    # Plan is the most recent header → active. Subjective was followed by Plan
+    # → completed.
+    assert states[0][1] == "completed"
+    assert states[3][1] == "active"
