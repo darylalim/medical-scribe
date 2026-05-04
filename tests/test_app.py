@@ -562,21 +562,31 @@ def test_state_a_renders_mic_and_upload_chooser_cards(booted_app):
 
 
 def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
-    """When transcript and SOAP both exist (State C / SOAP-ready), the split
-    view renders the transcript text_area AND at least one SOAP card body
-    text_area in a single render pass. Regression guard for the redesign's
-    primary win — verifying SOAP claims against the transcript without
-    tab-switching."""
+    """When transcript and SOAP both exist (State E / SOAP-ready), the split
+    view renders the transcript text_area AND the SOAP read-mode cards
+    (pencil buttons) in a single render pass. Regression guard for the
+    redesign's primary win — verifying SOAP claims against the transcript
+    without tab-switching.
+
+    State E now defaults cards to read mode (st.markdown + pencil button),
+    so the pre-Task-13 assertion of `>= 2 text_areas` is replaced by checking
+    for the transcript text_area plus the four pencil-edit buttons."""
     at = booted_app
     _seed_state_e(at)
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
 
-    # At least 2 text_areas: one for the transcript, at least one for a SOAP card.
-    # Today's render pre-redesign would only show ONE (whichever tab is active).
-    assert len(at.text_area) >= 2, (
-        f"split view should render transcript + at least one SOAP card "
-        f"text_area in the same pass; saw {len(at.text_area)}"
+    # Transcript text_area is always present in State E.
+    assert len(at.text_area) >= 1, f"transcript text_area missing; saw {len(at.text_area)}"
+
+    # All four pencil buttons present means the SOAP pane rendered in read
+    # mode — both panes are visible simultaneously in the same render pass.
+    edit_btn_keys = {
+        f"edit_{n.lower()}_btn" for n in ("Subjective", "Objective", "Assessment", "Plan")
+    }
+    actual_keys = {b.key for b in at.button if b.key}
+    assert edit_btn_keys.issubset(actual_keys), (
+        f"SOAP pencil buttons missing from split view; have {actual_keys}"
     )
 
 
@@ -1438,3 +1448,67 @@ def test_toggle_section_edit_cancel_with_no_snapshot_keeps_buffer():
     assert state["plan_editing"] is False
     assert state["plan_edit"] == "current text"
     assert state["plan_edit_snapshot"] is None
+
+
+def test_state_e_lands_in_read_mode_for_all_sections(booted_app):
+    """Cards must render with *_editing all False after a stream — the
+    `populate_section_edit_buffers` invariant in spec §6.5."""
+    at = booted_app
+    _seed_state_e(at)
+    at.run(timeout=30)
+
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert at.session_state[key] is False, f"{key} should default to False"
+
+    # Pencil edit buttons should be present (read mode).
+    edit_btn_keys = {
+        f"edit_{n.lower()}_btn" for n in ("Subjective", "Objective", "Assessment", "Plan")
+    }
+    actual_keys = {b.key for b in at.button if b.key}
+    assert edit_btn_keys.issubset(actual_keys), f"missing pencil buttons; have {actual_keys}"
+
+
+def test_state_e_pencil_click_enters_edit_mode(booted_app):
+    """Clicking the Subjective pencil flips its *_editing flag and exposes
+    Save/Cancel buttons."""
+    at = booted_app
+    _seed_state_e(at)
+    at.run(timeout=30)
+
+    pencil = next(b for b in at.button if b.key == "edit_subjective_btn")
+    pencil.click()
+    at.run(timeout=30)
+
+    assert at.session_state["subjective_editing"] is True
+    assert at.session_state["subjective_edit_snapshot"] is not None
+
+    actual_keys = {b.key for b in at.button if b.key}
+    assert "save_subjective_btn" in actual_keys
+    assert "cancel_subjective_btn" in actual_keys
+
+
+def test_state_e_cancel_reverts_buffer(booted_app):
+    """Editing then canceling restores the buffer from the snapshot."""
+    at = booted_app
+    _seed_state_e(at)
+    at.run(timeout=30)
+
+    next(b for b in at.button if b.key == "edit_subjective_btn").click()
+    at.run(timeout=30)
+
+    # Mutate the buffer (simulating typed edits).
+    at.session_state["subjective_edit"] = "TYPED OVER"
+    at.run(timeout=30)
+
+    next(b for b in at.button if b.key == "cancel_subjective_btn").click()
+    at.run(timeout=30)
+
+    assert at.session_state["subjective_editing"] is False
+    # _seed_state_e populated subjective_edit from _MINIMAL_SOAP — body "foo".
+    assert at.session_state["subjective_edit"] == "foo"
+    assert at.session_state["subjective_edit_snapshot"] is None

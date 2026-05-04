@@ -1027,6 +1027,80 @@ def _render_streaming_card(name: str, status: str, body: str) -> None:
             st.markdown(body)
 
 
+def _render_section_card(name: str) -> None:
+    """Render one SOAP section card in read mode or edit mode based on
+    the `{name}_editing` flag in session state.
+
+    Read mode: chip + name + pencil-icon button (toggles flag), body
+    rendered as `st.markdown(value)` for natural prose flow.
+
+    Edit mode: chip + name (no pencil), body as st.text_area with
+    `value=` + manual session_state sync (CLAUDE.md invariant — text_area
+    in a conditionally-rendered branch can't use `key=`), Save and Cancel
+    buttons. Save/Cancel call toggle_section_edit which handles snapshot
+    bookkeeping.
+    """
+    edit_key = SECTION_KEY_MAP[name]
+    editing_key = SECTION_EDITING_KEY_MAP[name]
+    snapshot_key = SECTION_SNAPSHOT_KEY_MAP[name]
+    is_editing = bool(st.session_state.get(editing_key))
+
+    with st.container(border=True):
+        if not is_editing:
+            # Read mode: header + body + pencil button on the right.
+            cols = st.columns([10, 1])
+            with cols[0]:
+                _render_section_header(name)
+                st.markdown(st.session_state.get(edit_key, ""))
+            with cols[1]:
+                if st.button(
+                    "✎",
+                    key=f"edit_{name.lower()}_btn",
+                    help=f"Edit {name}",
+                ):
+                    # Snapshot the current buffer for cancel-revert.
+                    st.session_state[snapshot_key] = st.session_state.get(edit_key, "")
+                    st.session_state[editing_key] = True
+                    st.rerun()
+        else:
+            # Edit mode: header + textarea + Save/Cancel buttons.
+            _render_section_header(name)
+            new_value = st.text_area(
+                f"{name} edit",
+                value=st.session_state.get(edit_key, ""),
+                height=120,
+                label_visibility="collapsed",
+            )
+            st.session_state[edit_key] = new_value
+
+            cols = st.columns([6, 1, 1])
+            with cols[1]:
+                if st.button(
+                    "Save",
+                    key=f"save_{name.lower()}_btn",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    toggle_section_edit(
+                        cast(MutableMapping[str, object], st.session_state),
+                        name,
+                        save=True,
+                    )
+                    st.rerun()
+            with cols[2]:
+                if st.button(
+                    "Cancel",
+                    key=f"cancel_{name.lower()}_btn",
+                    use_container_width=True,
+                ):
+                    toggle_section_edit(
+                        cast(MutableMapping[str, object], st.session_state),
+                        name,
+                        save=False,
+                    )
+                    st.rerun()
+
+
 def _render_soap_pane(model, tokenizer) -> None:
     """Right pane of State C split view: streaming SOAP cards while
     `_streaming` is True; always-editable cards once a SOAP draft exists;
@@ -1169,18 +1243,11 @@ def _render_soap_pane(model, tokenizer) -> None:
             "review carefully before copying."
         )
 
-    # Always-editable cards. value= + manual sync (CLAUDE.md invariant).
+    # Per-section cards: read mode + click-to-edit. Each card branches on
+    # {name}_editing; the value=+manual-sync pattern lives inside the edit
+    # branch of _render_section_card.
     for name in SOAP_SECTIONS:
-        with st.container(border=True):
-            _render_section_header(name)
-            buffer_key = SECTION_KEY_MAP[name]
-            new_value = st.text_area(
-                f"{name} edit",
-                value=st.session_state.get(buffer_key, ""),
-                height=120,
-                label_visibility="collapsed",
-            )
-            st.session_state[buffer_key] = new_value
+        _render_section_card(name)
 
     # OTHER card surfaces text the parser didn't recognise as a SOAP section.
     remainder = compute_unparsed_remainder(soap, parsed)
@@ -1189,11 +1256,22 @@ def _render_soap_pane(model, tokenizer) -> None:
             st.markdown("**OTHER**")
             st.markdown(remainder)
 
-    # Copy button reads the current edit buffers (the post-stream canonical
-    # source of truth).
+    # Copy bar — bottom-of-pane band with metadata caption + Copy button.
     edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
-    cols = st.columns([4, 2])
-    with cols[1]:
+    st.markdown(
+        "<div style='height: 1px; background: var(--color-border); margin-top: 12px;'></div>",
+        unsafe_allow_html=True,
+    )
+    bar_cols = st.columns([4, 2])
+    with bar_cols[0]:
+        st.markdown(
+            "<div style='font-family: var(--font-mono); font-size: 11px; "
+            "color: var(--color-text-subtle); padding-top: 14px;'>"
+            "last edited just now"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with bar_cols[1]:
         copy_to_clipboard_button(
             format_for_clipboard(edits),
             key="copy_btn",
