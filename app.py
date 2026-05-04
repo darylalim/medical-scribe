@@ -930,6 +930,49 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
             st.rerun()
 
 
+def _render_streaming_cards(section_states: list[tuple[str, str, str]]) -> None:
+    """Render the four streaming SOAP cards based on per-section status.
+
+    `section_states` is the output of `compute_section_states` — one tuple
+    per section in canonical SOAP order. `pending` cards show shimmering
+    skeleton lines and a muted chip; `active` cards show streamed text plus
+    a blinking cursor; `completed` cards render normally.
+
+    Used only during State D. State E uses `_render_section_card` instead
+    (which adds the read/edit toggle).
+    """
+    for name, status, body in section_states:
+        with st.container(border=True):
+            chip_opacity = "1.0" if status != "pending" else "0.4"
+            initial = html.escape(SECTION_INITIALS[name])
+            label = html.escape(name.upper())
+            label_color = "var(--color-text)" if status != "pending" else "var(--color-text-subtle)"
+            st.markdown(
+                f'<div class="soap-section-header">'
+                f'<span class="soap-chip soap-chip-{name.lower()}" '
+                f'style="opacity:{chip_opacity}">{initial}</span>'
+                f'<span class="soap-section-name" style="color:{label_color}">{label}</span>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            if status == "pending":
+                st.markdown(
+                    '<div style="padding-left:30px;">'
+                    '<div class="ms-skel-line" style="width:80%"></div>'
+                    '<div class="ms-skel-line" style="width:60%"></div>'
+                    '<div class="ms-skel-line" style="width:70%"></div>'
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            elif status == "active":
+                # Streamed text + cursor. Body is markdown; cursor span is
+                # appended via raw HTML so the animation runs.
+                st.markdown(body)
+                st.markdown('<span class="ms-streaming-cursor"></span>', unsafe_allow_html=True)
+            else:  # completed
+                st.markdown(body)
+
+
 def _render_soap_pane(model, tokenizer) -> None:
     """Right pane of State C split view: streaming SOAP cards while
     `_streaming` is True; always-editable cards once a SOAP draft exists;
@@ -979,17 +1022,30 @@ def _render_soap_pane(model, tokenizer) -> None:
         )
         return
 
-    # State D: streaming.
+    # State D: streaming with skeleton cards.
+    #
+    # Render all four section cards from t=0 with three per-card states:
+    # "pending" (skeleton + muted chip), "active" (live text + cursor),
+    # "completed" (finalized text). compute_section_states drives the per-
+    # tick render; tuple-equality on the section_states list is the throttle
+    # guard analogous to last_status — re-render the cards container only
+    # when the per-card statuses actually change.
     if is_streaming:
         cards_placeholder = st.empty()
         status_placeholder = st.empty()
         status_placeholder.markdown(f"_{streaming_status_label([])}_")
         buf = ""
         meta: dict[str, object] = {}
-        last_complete_count = 0
-        # Guard the status DOM update — without this we'd re-render the
-        # markdown every chunk (dozens per section), which is visibly stuttery.
+        last_section_states: list[tuple[str, str, str]] | None = None
         last_status: str | None = None
+        # Render initial all-pending cards.
+        section_states_initial: list[tuple[str, str, str]] = [
+            (name, "pending", "") for name in SOAP_SECTIONS
+        ]
+        with cards_placeholder.container():
+            _render_streaming_cards(section_states_initial)
+        last_section_states = section_states_initial
+
         try:
             for chunk in stream_soap(
                 model,
@@ -999,22 +1055,18 @@ def _render_soap_pane(model, tokenizer) -> None:
                 meta=meta,
             ):
                 buf += chunk
-                sections = parse_soap_sections(buf)
-                section_names = [n for n in SOAP_SECTIONS if n in sections]
+                section_states = compute_section_states(buf, list(SOAP_SECTIONS))
+                seen_names = [name for name, status, _ in section_states if status != "pending"]
 
-                status_text = streaming_status_label(section_names)
+                status_text = streaming_status_label(seen_names)
                 if status_text != last_status:
                     status_placeholder.markdown(f"_{status_text}_")
                     last_status = status_text
 
-                complete_count = max(0, len(section_names) - 1)
-                if complete_count > last_complete_count:
+                if section_states != last_section_states:
                     with cards_placeholder.container():
-                        for name in section_names[:complete_count]:
-                            with st.container(border=True):
-                                _render_section_header(name)
-                                st.markdown(sections[name])
-                    last_complete_count = complete_count
+                        _render_streaming_cards(section_states)
+                    last_section_states = section_states
         except Exception as exc:
             cards_placeholder.empty()
             status_placeholder.empty()
