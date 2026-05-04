@@ -300,8 +300,9 @@ def test_new_session_with_audio_opens_dialog(booted_app):
 
 
 def test_initial_state_includes_new_keys():
-    """Locks the session-state shape introduced by the live-capture-and-tabs
-    redesign and amended by the split-view redesign."""
+    """Locks the session-state shape of the split-view redesign: per-section
+    edit buffers and the streaming flag must all be present with their
+    correct default values."""
     from app import INITIAL_STATE
 
     assert INITIAL_STATE["subjective_edit"] == ""
@@ -402,8 +403,8 @@ def test_escape_text_for_inline_script_empty_string():
 def test_section_key_map_covers_all_soap_sections():
     """Drift guard: SECTION_KEY_MAP must have one entry per SOAP_SECTIONS
     name. Catches the case where SOAP_SECTIONS gains a section but the
-    derivation breaks. Currently SECTION_KEY_MAP is built via comprehension
-    over SOAP_SECTIONS, so this is also a smoke check on the derivation."""
+    derivation breaks. SECTION_KEY_MAP is built via comprehension over
+    SOAP_SECTIONS, so this is also a smoke check on the derivation."""
     from app import SECTION_KEY_MAP, SOAP_SECTIONS
 
     assert set(SECTION_KEY_MAP.keys()) == set(SOAP_SECTIONS)
@@ -520,7 +521,7 @@ def test_populate_section_edit_buffers_missing_section_leaves_empty():
 
 def test_populate_section_edit_buffers_empty_soap_clears_all():
     """Empty SOAP wipes every buffer to ''. Same semantics as the regenerate
-    click path in Task 3 (which calls this helper after resetting `soap`)."""
+    click path (which calls this helper after resetting `soap`)."""
     from app import SECTION_KEY_MAP, populate_section_edit_buffers
 
     state: dict = dict.fromkeys(SECTION_KEY_MAP.values(), "preexisting")
@@ -532,8 +533,8 @@ def test_populate_section_edit_buffers_empty_soap_clears_all():
 
 
 def test_state_a_renders_mic_and_upload_chooser_cards(booted_app):
-    """State A renders both chooser cards (Record + Upload) inline,
-    no expander, no separate "Or upload an existing recording" toggle.
+    """State A renders both chooser cards (Record + Upload) inline as
+    side-by-side cards in the split-view shell.
 
     Assertions are pinned to the wrapper-tag forms (e.g.,
     `<div class="ms-chooser-card">`) rather than bare class-name substrings —
@@ -659,9 +660,11 @@ def test_state_c_renders_error_caption_when_status_error(booted_app):
 
 
 def test_initial_state_excludes_active_tab_and_is_editing():
-    """Drift guard against accidental re-introduction. Both keys were
-    removed in the split-view redesign — `active_tab` because tabs are gone,
-    `is_editing` because cards are always-editable post-stream."""
+    """Drift guard against accidental re-introduction of pre-redesign keys.
+    `active_tab` was removed when tabs were dropped in favor of the split
+    view; the singular `is_editing` was replaced by four per-section
+    `*_editing` keys (see SECTION_EDITING_KEY_MAP). Re-introducing either
+    singular form would silently conflict with the current schema."""
     from app import INITIAL_STATE
 
     assert "active_tab" not in INITIAL_STATE
@@ -669,11 +672,11 @@ def test_initial_state_excludes_active_tab_and_is_editing():
 
 
 def test_card_edit_buffer_persists_across_reruns(booted_app):
-    """Always-editable card behavior: writing to a *_edit buffer and
+    """Per-section edit buffer behavior: writing to a *_edit buffer and
     re-rendering preserves the value across reruns. The CLAUDE.md
     invariant about value= + manual sync (not key=) protects this in
-    conditionally-rendered branches; the test exercises the basic
-    persistence path."""
+    _render_section_card's conditionally-rendered edit branch; the test
+    exercises the basic persistence path."""
     at = booted_app
     _seed_state_e(at)
     # Override one buffer to a non-default value so the rerun's persistence
@@ -1092,7 +1095,7 @@ def test_stage_chip_variants_exact_match_with_derive_stage_label():
 
 
 def test_stage_chip_html_escapes_label_text():
-    """Stage labels are static today, but if a future state label embeds
+    """Stage labels are static strings, but if a future state label embeds
     HTML metacharacters, the chip must escape them. Asserts both that the
     raw form is absent AND the escaped form is present so a half-escape
     regression fails loudly."""
@@ -1156,7 +1159,7 @@ def test_format_session_meta(state, expected):
 
 
 # ---------------------------------------------------------------------------
-# Task 5: _topbar_html unit tests
+# _topbar_html unit tests
 # ---------------------------------------------------------------------------
 
 
@@ -1189,7 +1192,7 @@ def test_topbar_html_escapes_meta_string():
 
 
 # ---------------------------------------------------------------------------
-# Task 5: AppTest scenarios for topbar and new-session button
+# AppTest scenarios for topbar and new-session button
 # ---------------------------------------------------------------------------
 
 
