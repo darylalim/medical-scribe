@@ -526,30 +526,32 @@ def test_populate_section_edit_buffers_empty_soap_clears_all():
 
 def test_state_a_renders_mic_and_upload_chooser_cards(booted_app):
     """State A renders both chooser cards (Record + Upload) inline,
-    no expander, no separate "Or upload an existing recording" toggle."""
+    no expander, no separate "Or upload an existing recording" toggle.
+
+    Assertions are pinned to the wrapper-tag forms (e.g.,
+    `<div class="ms-chooser-card">`) rather than bare class-name substrings —
+    bare substrings would also match the design-tokens CSS block, so a
+    regression that dropped the chooser's markdown emission would pass
+    silently."""
     at = booted_app
 
     markdown_blocks = [m.value for m in at.markdown]
     joined = "\n".join(markdown_blocks)
     assert "Record this visit" in joined
     assert "Upload a recording" in joined
-    assert "ms-chooser-card" in joined
+    assert '<div class="ms-chooser-card">' in joined
+    assert '<div class="ms-mic-circle">' in joined
 
-    # Audio input and file uploader widgets are present with their keys.
-    # The exact AppTest API for these widgets varies; iterate at.get if available
-    # or fall back to verifying both keys appear in session_state via the booted run.
-    audio_input_keys = (
-        [w.key for w in getattr(at, "audio_input", [])] if hasattr(at, "audio_input") else []
-    )
-    file_uploader_keys = (
-        [w.key for w in getattr(at, "file_uploader", [])] if hasattr(at, "file_uploader") else []
-    )
-    # If the AppTest API exposes the widgets, both should be keyed; otherwise the
-    # markdown assertions above suffice.
-    if audio_input_keys:
+    # File uploader is exposed by AppTest at Streamlit 1.39 — assert key
+    # presence unconditionally so a regression dropping the widget fails loudly.
+    file_uploader_keys = [w.key for w in at.file_uploader]
+    assert "file_uploader_widget" in file_uploader_keys
+
+    # st.audio_input may or may not be exposed by AppTest at the pinned
+    # Streamlit version. Conditionally assert when the accessor is available.
+    if hasattr(at, "audio_input"):
+        audio_input_keys = [w.key for w in at.audio_input]
         assert "audio_input_widget" in audio_input_keys
-    if file_uploader_keys:
-        assert "file_uploader_widget" in file_uploader_keys
 
 
 def test_state_c_renders_transcript_and_soap_panes_simultaneously(booted_app):
