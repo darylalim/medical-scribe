@@ -1512,3 +1512,47 @@ def test_state_e_cancel_reverts_buffer(booted_app):
     # _seed_state_e populated subjective_edit from _MINIMAL_SOAP — body "foo".
     assert at.session_state["subjective_edit"] == "foo"
     assert at.session_state["subjective_edit_snapshot"] is None
+
+
+def test_regenerate_while_editing_clears_editing_flags_and_snapshots(booted_app):
+    """Regenerate while a section is in edit mode must clear the
+    edit-mode meta-state. Otherwise a subsequent Cancel could restore
+    the stale pre-regenerate body via the snapshot, silently
+    overwriting the freshly streamed SOAP.
+
+    The fix lives in _render_transcript_pane's primary-action click
+    handler — alongside the *_edit buffer clear, it must also clear
+    *_editing and *_edit_snapshot."""
+    at = booted_app
+    _seed_state_e(at)
+    at.run(timeout=30)
+
+    # Enter edit mode on Subjective so a snapshot exists.
+    next(b for b in at.button if b.key == "edit_subjective_btn").click()
+    at.run(timeout=30)
+
+    assert at.session_state["subjective_editing"] is True
+    assert at.session_state["subjective_edit_snapshot"] is not None
+
+    # Click the primary action (Regenerate SOAP).
+    regen = next(b for b in at.button if b.key == "generate_btn")
+    regen.click()
+    at.run(timeout=30)
+
+    # The click handler should have cleared the editing meta-state.
+    # The streaming flag is now True, so don't run further; just verify
+    # the session_state shape that the click handler produced.
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert at.session_state[key] is False, f"{key} should be False after Regenerate"
+    for key in (
+        "subjective_edit_snapshot",
+        "objective_edit_snapshot",
+        "assessment_edit_snapshot",
+        "plan_edit_snapshot",
+    ):
+        assert at.session_state[key] is None, f"{key} should be None after Regenerate"

@@ -2,8 +2,9 @@
 
 Persistent split view (transcript left, SOAP right) from State C
 onward. Live capture via st.audio_input; file upload as a secondary
-affordance. SOAP cards are always-editable post-stream. Copy to
-clipboard is the only export — nothing is written to disk."""
+affordance. SOAP cards default to read mode post-stream and toggle to edit mode
+via the pencil affordance. Copy to clipboard is the only export — nothing is
+written to disk."""
 
 from __future__ import annotations
 
@@ -271,7 +272,7 @@ def populate_section_edit_buffers(state: MutableMapping[str, object], soap: str)
     """Populate the four `*_edit` session-state buffers from a SOAP markdown blob.
 
     Called once on stream completion so the post-stream rerun lands with
-    cards already in always-editable mode and their bodies pre-filled.
+    cards in read mode and their bodies pre-filled.
     Sections missing from `soap` get '' (defensive against partial / truncated
     model output)."""
     parsed = parse_soap_sections(soap)
@@ -729,7 +730,7 @@ def _design_tokens_css() -> str:
 
 def _render_section_header(name: str, *, muted: bool = False) -> None:
     """Colored letter-chip + section name. Reused by both card render
-    paths (streaming markdown during generation, always-editable text_areas
+    paths (streaming markdown during generation, read-mode/edit-mode text_areas
     post-stream). Visual styles live in _design_tokens_css(), injected
     once per page render via main().
 
@@ -990,10 +991,18 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
                     "transcription before generating a SOAP note."
                 )
                 return
-            # New generation: discard any in-progress section edits.
+            # New generation: discard any in-progress section edits AND
+            # the edit-mode meta-state. Without clearing *_editing and
+            # *_edit_snapshot, a Cancel after Regenerate can restore the
+            # pre-regenerate body via the stale snapshot, silently
+            # overwriting the freshly streamed SOAP.
             st.session_state["soap_truncated"] = False
             for key in SECTION_KEY_MAP.values():
                 st.session_state[key] = ""
+            for key in SECTION_EDITING_KEY_MAP.values():
+                st.session_state[key] = False
+            for key in SECTION_SNAPSHOT_KEY_MAP.values():
+                st.session_state[key] = None
             st.session_state["_streaming"] = True
             st.rerun()
 
@@ -1103,7 +1112,7 @@ def _render_section_card(name: str) -> None:
 
 def _render_soap_pane(model, tokenizer) -> None:
     """Right pane of State C split view: streaming SOAP cards while
-    `_streaming` is True; always-editable cards once a SOAP draft exists;
+    `_streaming` is True; read-mode cards (toggle to edit via pencil) once a SOAP draft exists;
     placeholder copy when transcript is ready but Generate has not been
     clicked yet.
 
@@ -1224,7 +1233,7 @@ def _render_soap_pane(model, tokenizer) -> None:
         st.session_state["_streaming"] = False
         st.rerun()
 
-    # States E (merged): SOAP exists, cards always editable.
+    # States E: SOAP exists; cards default to read mode with click-to-edit.
     parsed = parse_soap_sections(soap or "")
 
     # Persistent truncation warning.
