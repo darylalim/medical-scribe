@@ -279,6 +279,37 @@ def populate_section_edit_buffers(state: MutableMapping[str, object], soap: str)
         state[SECTION_KEY_MAP[name]] = parsed.get(name, "")
 
 
+def toggle_section_edit(
+    state: MutableMapping[str, object],
+    section_name: str,
+    *,
+    save: bool,
+) -> None:
+    """Exit edit mode for one SOAP section.
+
+    On `save=True`: keep the current `{name}_edit` value (already up-to-date
+    via the value=+manual-sync pattern in _render_section_card), clear the
+    snapshot, flip `{name}_editing` to False.
+
+    On `save=False` (Cancel): if a snapshot exists, restore `{name}_edit`
+    from it; clear the snapshot; flip the flag. If no snapshot is present
+    (defensive), just flip the flag — the buffer's current value is kept.
+
+    Pure on `state` (no Streamlit imports). Intended to be called from the
+    Save / Cancel button click handlers in _render_section_card.
+    """
+    edit_key = SECTION_KEY_MAP[section_name]
+    editing_key = SECTION_EDITING_KEY_MAP[section_name]
+    snapshot_key = SECTION_SNAPSHOT_KEY_MAP[section_name]
+
+    if not save:
+        snapshot = state.get(snapshot_key)
+        if snapshot is not None:
+            state[edit_key] = snapshot
+    state[snapshot_key] = None
+    state[editing_key] = False
+
+
 def streaming_status_label(section_names: list[str]) -> str:
     """Label for the streaming-status placeholder.
 

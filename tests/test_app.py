@@ -1385,3 +1385,56 @@ def test_populate_section_edit_buffers_does_not_touch_editing_flags():
         "plan_editing",
     ):
         assert state[key] is True, f"populate_section_edit_buffers must not touch {key}"
+
+
+def test_toggle_section_edit_save_clears_snapshot_and_keeps_buffer():
+    from collections.abc import MutableMapping
+
+    from app import toggle_section_edit
+
+    state: MutableMapping[str, object] = {
+        "subjective_editing": True,
+        "subjective_edit": "user-typed text",
+        "subjective_edit_snapshot": "original text",
+    }
+    toggle_section_edit(state, "Subjective", save=True)
+
+    assert state["subjective_editing"] is False
+    assert state["subjective_edit"] == "user-typed text"
+    assert state["subjective_edit_snapshot"] is None
+
+
+def test_toggle_section_edit_cancel_restores_buffer_from_snapshot():
+    from collections.abc import MutableMapping
+
+    from app import toggle_section_edit
+
+    state: MutableMapping[str, object] = {
+        "objective_editing": True,
+        "objective_edit": "user-typed text we don't want",
+        "objective_edit_snapshot": "original text",
+    }
+    toggle_section_edit(state, "Objective", save=False)
+
+    assert state["objective_editing"] is False
+    assert state["objective_edit"] == "original text"
+    assert state["objective_edit_snapshot"] is None
+
+
+def test_toggle_section_edit_cancel_with_no_snapshot_keeps_buffer():
+    """Defensive: if a Cancel fires without a snapshot in place, don't crash
+    or wipe the buffer — just flip the flag."""
+    from collections.abc import MutableMapping
+
+    from app import toggle_section_edit
+
+    state: MutableMapping[str, object] = {
+        "plan_editing": True,
+        "plan_edit": "current text",
+        "plan_edit_snapshot": None,
+    }
+    toggle_section_edit(state, "Plan", save=False)
+
+    assert state["plan_editing"] is False
+    assert state["plan_edit"] == "current text"
+    assert state["plan_edit_snapshot"] is None
