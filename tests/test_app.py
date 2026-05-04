@@ -1026,19 +1026,20 @@ def test_design_tokens_css_is_wrapped_in_style_tag():
 def test_stage_chip_html_picks_correct_variant(label, expected_variant):
     from app import _stage_chip_html
 
-    html = _stage_chip_html(label)
-    assert f"ms-stage-{expected_variant}" in html
-    assert label in html
-    assert 'class="ms-dot"' in html
+    markup = _stage_chip_html(label)
+    assert f"ms-stage-{expected_variant}" in markup
+    assert label in markup
+    assert 'class="ms-dot"' in markup
 
 
-def test_stage_chip_variants_cover_every_derive_stage_label_output():
-    """Drift-guard. Every label `derive_stage_label` can return must have a
-    STAGE_CHIP_VARIANTS entry — otherwise `_stage_chip_html` raises KeyError
-    in production for the missed state."""
+def test_stage_chip_variants_exact_match_with_derive_stage_label():
+    """Drift-guard. Every label `derive_stage_label` produces must have a
+    `STAGE_CHIP_VARIANTS` entry, AND `STAGE_CHIP_VARIANTS` must not have
+    orphan keys. The helper's `.get(label, "static")` fallback would
+    silently mis-render unknown labels — this test makes that case CI-
+    visible by asserting set equality, not just inclusion."""
     from app import STAGE_CHIP_VARIANTS, derive_stage_label
 
-    # Sample one state from each branch of derive_stage_label.
     sample_states = [
         {"audio_bytes": None},  # State A
         {"audio_bytes": b"x", "tx": None},  # State B
@@ -1046,18 +1047,20 @@ def test_stage_chip_variants_cover_every_derive_stage_label_output():
         {"audio_bytes": b"x", "tx": "t", "soap": None},  # State C
         {"audio_bytes": b"x", "tx": "t", "soap": "s"},  # State E
     ]
-    for state in sample_states:
-        label = derive_stage_label(state)
-        assert label in STAGE_CHIP_VARIANTS, (
-            f"derive_stage_label returned {label!r} which is not in STAGE_CHIP_VARIANTS"
-        )
+    expected_labels = {derive_stage_label(state) for state in sample_states}
+    assert set(STAGE_CHIP_VARIANTS.keys()) == expected_labels, (
+        f"STAGE_CHIP_VARIANTS keys {set(STAGE_CHIP_VARIANTS.keys())} "
+        f"don't match derive_stage_label outputs {expected_labels}"
+    )
 
 
 def test_stage_chip_html_escapes_label_text():
     """Stage labels are static today, but if a future state label embeds
-    HTML metacharacters, the chip must escape them."""
+    HTML metacharacters, the chip must escape them. Asserts both that the
+    raw form is absent AND the escaped form is present so a half-escape
+    regression fails loudly."""
     from app import _stage_chip_html
 
-    # Inject a synthetic label with a metacharacter; helper should escape it.
-    html = _stage_chip_html("<script>")
-    assert "<script>" not in html or "&lt;script&gt;" in html
+    markup = _stage_chip_html("<script>")
+    assert "<script>" not in markup, "raw <script> tag leaked into chip output"
+    assert "&lt;script&gt;" in markup, "escaped form missing from chip output"
