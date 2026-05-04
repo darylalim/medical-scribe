@@ -43,12 +43,14 @@ Uploads are capped at **100 MB** (`.streamlit/config.toml`); split longer record
 
 ### UI
 
-- **Sidebar** — `+ New session` button. Resets immediately when no audio is loaded; otherwise opens a confirm dialog before discarding the current draft.
-- **State A (no audio)** — chooser with two side-by-side cards: record live with `st.audio_input` (left) or upload a `.wav` / `.mp3` / `.flac` / `.m4a` file (right). Both paths are first-class — no expander.
-- **State B (transcribing)** — left pane shows the audio player and a transcribing spinner; right pane shows an "Awaiting transcript…" placeholder so the screen never goes blank.
+- **Top bar** — title + colored stage chip (gray static for idle states; dark with pulsing dot when the system is working) + session metadata (`session · Xm Ys · trimmed N%`) + `+ New session` button. Resets immediately when no audio is loaded; otherwise opens a confirm dialog before discarding the current draft.
+- **State A (no audio)** — chooser with two side-by-side cards: record live with `st.audio_input` (left, with a black mic affordance) or drag-and-drop / browse a `.wav` / `.mp3` / `.flac` / `.m4a` file (right, dashed dropzone).
+- **State B (transcribing)** — left pane shows the audio player and a phased `st.status` indicator (✓ trim → spinner transcribe); right pane shows an "Awaiting transcript…" placeholder so the screen never goes blank.
 - **State C onward** — persistent vertical split:
-  - **Left pane** — audio player, editable transcript, and the primary action button (label flips between **Generate SOAP note** and **Regenerate SOAP** based on whether a draft already exists).
-  - **Right pane** — the SOAP draft as four color-coded cards (Subjective / Objective / Assessment / Plan) with letter badges (S / O / A / P), then a **Copy to clipboard** button. During streaming, cards appear one at a time as each section completes, with an italic status line ("Drafting Subjective…", …) below the cards. Once streaming finishes, every card body is an editable text area in place — no Edit/Done toggle.
+  - **Left pane** — audio player, editable transcript, and the primary action button (label flips between **Generate SOAP note** and **Regenerate SOAP**).
+  - **Right pane (State C)** — "Ready to draft a SOAP note" placeholder with model name, token budget, and typical wall-clock estimate.
+  - **Right pane (State D, streaming)** — all four SOAP cards visible immediately as skeletons. The active section streams text with a blinking cursor; previously-active sections finalize to plain text; pending sections show shimmering skeleton lines. Status line cycles `Drafting Subjective…` → `Drafting Objective…` etc.
+  - **Right pane (State E, ready)** — four cards default to read mode (markdown prose with section chips); click the pencil icon to enter edit mode for that section (textarea + Save + Cancel). Bottom Copy bar with "Editable" caption + **Copy to clipboard** button.
 
 ### Workflow
 
@@ -58,7 +60,7 @@ Uploads are capped at **100 MB** (`.streamlit/config.toml`); split longer record
 4. **Refine** any card by typing directly into it. Edits are picked up immediately.
 5. **Copy** the note to clipboard for paste into the EHR or chart.
 
-To retry with a different draft, edit the transcript and click **Regenerate SOAP** — the button is idempotent and re-runs against the current transcript, discarding in-progress card edits. To start over, click **+ New session** in the sidebar.
+To retry with a different draft, edit the transcript and click **Regenerate SOAP** — the button is idempotent and re-runs against the current transcript, discarding in-progress card edits. To start over, click **+ New session** in the top bar.
 
 ## Notes
 
@@ -119,11 +121,11 @@ Editor integration: VS Code uses the [ty extension](https://marketplace.visualst
 [pytest](https://docs.pytest.org/) with [pytest-cov](https://pytest-cov.readthedocs.io/) and [pytest-mock](https://pytest-mock.readthedocs.io/):
 
 ```bash
-uv run pytest                                                # ~130 unit tests
+uv run pytest                                                # ~170 unit tests
 uv run pytest --cov=medical_scribe --cov-report=term-missing # with coverage
 uv run pytest -m integration                                 # real-model integration test
 ```
 
-Tests marked `@pytest.mark.integration` (currently one, covering MedASR) are excluded from the default run — they download real model weights and hit the network. Opt in with `-m integration`.
+Tests marked `@pytest.mark.integration` (one, covering MedASR) are excluded from the default run — they download real model weights and hit the network. Opt in with `-m integration`.
 
 Config lives under `[tool.ruff]`, `[tool.ty.environment]`, and `[tool.pytest.ini_options]` in `pyproject.toml`.

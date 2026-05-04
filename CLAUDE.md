@@ -12,9 +12,9 @@ Local-first pipeline for Apple Silicon. Capture a physician-patient visit (live 
   - `llm.py` — MedGemma MLX loader + `stream_soap()` generator.
   - `prompts.py` — SOAP system prompt + `format_soap_messages()`.
   - `soap_sections.py` — `parse_soap_sections`, `assemble_soap`, `format_for_clipboard` (pure string utilities for the four-section SOAP format).
-- `app.py` — Streamlit UI; the only file that imports `streamlit`. Five-state machine (A: no audio → B: transcribing → C: transcript ready → D: streaming SOAP → E: SOAP-ready/editable) with a single top bar (`Medical Scribe` title + stage chip + session metadata + `+ New session` button). From State B onward the UI shell is a persistent vertical split (transcript left, SOAP right); the SOAP pane has four sub-renders — "Awaiting transcript" (B), "Click Generate" placeholder (C), streaming cards (D), and editable cards (E).
+- `app.py` — Streamlit UI; the only file that imports `streamlit`. Five-state machine (A: no audio → B: transcribing → C: transcript ready → D: streaming SOAP → E: SOAP-ready/editable) with a single top bar (`Medical Scribe` title + stage chip + session metadata + `+ New session` button). From State B onward the UI shell is a persistent vertical split (transcript left, SOAP right); the SOAP pane has four sub-renders — "Awaiting transcript" (B), model+timing placeholder (C), skeleton-card streaming (D), and read-mode + click-to-edit cards (E).
 - `.streamlit/config.toml` — server config; caps upload at `maxUploadSize = 100` MB.
-- `tests/` — ~130 unit tests + 1 gated integration test.
+- `tests/` — ~170 unit tests + 1 gated integration test.
 
 ## Commands
 
