@@ -177,6 +177,31 @@ def derive_stage_label(state: Mapping[str, object]) -> str:
     return "SOAP ready"
 
 
+# Maps every label `derive_stage_label` can return to "static" (idle states
+# A, C, E) or "active" (system-working states B, D). _stage_chip_html
+# selects the visual variant from this map. Drift guard:
+# tests/test_app.py::test_stage_chip_variants_cover_every_derive_stage_label_output.
+STAGE_CHIP_VARIANTS: dict[str, str] = {
+    "No audio loaded": "static",
+    "Transcribing…": "active",
+    "Transcript ready": "static",
+    "Generating SOAP…": "active",
+    "SOAP ready": "static",
+}
+
+
+def _stage_chip_html(label: str) -> str:
+    """Return the stage chip span — variant chosen by STAGE_CHIP_VARIANTS,
+    label HTML-escaped (defensive against future dynamic labels)."""
+    variant = STAGE_CHIP_VARIANTS.get(label, "static")
+    safe_label = html.escape(label)
+    return (
+        f'<span class="ms-stage-chip ms-stage-{variant}">'
+        f'<span class="ms-dot"></span>{safe_label}'
+        f"</span>"
+    )
+
+
 def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str, object]) -> None:
     """Set state['soap_truncated'] based on streaming meta's finish_reason."""
     state["soap_truncated"] = meta.get("finish_reason") == "length"
