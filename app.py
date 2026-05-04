@@ -293,6 +293,12 @@ def _format_session_meta(state: Mapping[str, object]) -> str:
     - State B (audio present, no transcript): "recording · {filename}".
     - State C onward: "session · {Xm Ys} · trimmed {N}%" if VAD trimmed
       anything, otherwise "session · {Xm Ys}".
+
+    The trim-percentage branch is suppressed in three degenerate cases:
+    `trimmed_seconds <= 0` (VAD error path returns 0 — claiming "100%
+    trimmed" would be misleading), `trimmed_seconds >= original_seconds`
+    (VAD no_speech path or no-op trim), and `original_seconds <= 0`
+    (defensive — should never happen for a successfully decoded clip).
     """
     if state.get("audio_bytes") is None:
         return ""
@@ -300,12 +306,16 @@ def _format_session_meta(state: Mapping[str, object]) -> str:
     if state.get("tx") is None:
         return f"recording · {audio_name}"
     trim = state.get("tx_trim")
-    if trim is None or getattr(trim, "original_seconds", 0) <= 0:
+    if trim is None:
         return f"session · {audio_name}"
-    duration = _format_duration(trim.original_seconds)
-    if getattr(trim, "trimmed_seconds", 0) >= getattr(trim, "original_seconds", 0):
+    original = getattr(trim, "original_seconds", 0)
+    trimmed = getattr(trim, "trimmed_seconds", 0)
+    if original <= 0:
+        return f"session · {audio_name}"
+    duration = _format_duration(original)
+    if trimmed <= 0 or trimmed >= original:
         return f"session · {duration}"
-    pct = round((1.0 - trim.trimmed_seconds / trim.original_seconds) * 100)
+    pct = round((1.0 - trimmed / original) * 100)
     return f"session · {duration} · trimmed {pct}%"
 
 

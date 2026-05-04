@@ -1088,7 +1088,7 @@ def test_stage_chip_html_escapes_label_text():
             },
             "session · 10m 0s · trimmed 47%",
         ),
-        # Trim result with status="error" or no_speech — original_seconds == trimmed_seconds
+        # Trim result with status="no_speech" — trimmed_seconds == original_seconds
         (
             {
                 "audio_bytes": b"x",
@@ -1097,6 +1097,18 @@ def test_stage_chip_html_escapes_label_text():
                 "tx_trim": type("TR", (), {"original_seconds": 60.0, "trimmed_seconds": 60.0})(),
             },
             "session · 1m 0s",
+        ),
+        # status="error" TrimResult — VAD failed, audio_bytes is original input,
+        # trimmed_seconds=0.0. Without the trimmed<=0 clamp, the helper would
+        # compute 1.0 - 0/300 = 100% and output a misleading "trimmed 100%".
+        (
+            {
+                "audio_bytes": b"x",
+                "audio_name": "v.wav",
+                "tx": "transcript",
+                "tx_trim": type("TR", (), {"original_seconds": 300.0, "trimmed_seconds": 0.0})(),
+            },
+            "session · 5m 0s",
         ),
     ],
 )
