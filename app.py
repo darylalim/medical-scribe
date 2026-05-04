@@ -1267,7 +1267,7 @@ def _render_soap_pane(model, tokenizer) -> None:
         st.markdown(
             "<div style='font-family: var(--font-mono); font-size: 11px; "
             "color: var(--color-text-subtle); padding-top: 14px;'>"
-            "last edited just now"
+            "Editable"
             "</div>",
             unsafe_allow_html=True,
         )
