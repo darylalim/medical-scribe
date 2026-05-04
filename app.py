@@ -374,49 +374,153 @@ def show_error(label: str, exc: BaseException) -> None:
     st.error(f"{label}: {type(exc).__name__}: {exc}")
 
 
-def _soap_chip_styles_html() -> str:
-    """One-shot CSS for the SOAP card chips. Injected once per page
-    render via main(). Per-section background color is read from
-    SECTION_COLORS so adding a section in soap_sections.py also
-    auto-propagates here (paired with the SECTION_COLORS drift guard
-    in tests/test_app.py)."""
-    color_rules = "\n".join(
+def _design_tokens_css() -> str:
+    """Compact Modern design tokens — typography, color, spacing, chip and
+    chrome styles, animations. Injected once per page render in main().
+
+    Combines what the previous `_soap_chip_styles_html` covered (SOAP card
+    chips + section headers) with the rest of the token system (top bar,
+    stage chips, skeleton-card shimmer, streaming cursor). Per-section
+    background colors are read from SECTION_COLORS so adding a section in
+    soap_sections.py auto-propagates the chip rule. The drift guards in
+    tests/test_app.py catch SECTION_COLORS / SOAP_SECTIONS divergence.
+    """
+    soap_chip_rules = "\n".join(
         f".soap-chip-{name.lower()} {{ background: {color}; }}"
         for name, color in SECTION_COLORS.items()
     )
-    return f"""
-<style>
+    return f"""<style>
+:root {{
+  --color-surface: #ffffff;
+  --color-surface-2: #fafafa;
+  --color-canvas: #f9fafb;
+  --color-border: #e5e7eb;
+  --color-text: #111111;
+  --color-text-muted: #6b7280;
+  --color-text-subtle: #9ca3af;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+
+  --font-mono: "SF Mono", "Menlo", monospace;
+}}
+
+/* Top bar */
+.ms-topbar {{
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}}
+.ms-topbar-title {{ font-weight: 600; color: var(--color-text); }}
+.ms-topbar-meta {{
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  margin-left: auto;
+}}
+
+/* Stage chips — monochrome with active-state pulse */
+.ms-stage-chip {{
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}}
+.ms-stage-static {{
+  background: #f3f4f6;
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}}
+.ms-stage-active {{
+  background: var(--color-text);
+  color: var(--color-surface);
+  border-color: var(--color-text);
+}}
+.ms-stage-static .ms-dot {{
+  width: 6px; height: 6px; border-radius: 50%;
+  border: 1px solid var(--color-text-subtle);
+}}
+.ms-stage-active .ms-dot {{
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-surface);
+  animation: ms-pulse 1.5s ease-in-out infinite;
+}}
+@keyframes ms-pulse {{
+  0%, 100% {{ opacity: 1; transform: scale(1); }}
+  50%      {{ opacity: 0.4; transform: scale(0.85); }}
+}}
+
+/* Skeleton lines (state D streaming placeholders) */
+.ms-skel-line {{
+  background: linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%);
+  background-size: 200% 100%;
+  animation: ms-shimmer 1.5s linear infinite;
+  height: 10px;
+  border-radius: 2px;
+  margin-bottom: 6px;
+}}
+@keyframes ms-shimmer {{
+  0%   {{ background-position: 100% 0; }}
+  100% {{ background-position: -100% 0; }}
+}}
+
+/* Streaming text cursor */
+.ms-streaming-cursor {{
+  display: inline-block;
+  width: 1px; height: 13px;
+  background: var(--color-text);
+  animation: ms-cursor-blink 1s infinite;
+  vertical-align: middle;
+  margin-left: 1px;
+}}
+@keyframes ms-cursor-blink {{
+  50% {{ opacity: 0; }}
+}}
+
+/* SOAP section header (chip + name) — shared by streaming + post-stream */
 .soap-section-header {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
 }}
 .soap-chip {{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    color: white;
-    font-weight: 600;
-    font-size: 13px;
-    flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: white;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
 }}
 .soap-section-name {{
-    font-weight: 600;
-    letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text);
 }}
-{color_rules}
-</style>
-"""
+{soap_chip_rules}
+</style>"""
 
 
 def _render_section_header(name: str) -> None:
     """Colored letter-chip + section name. Reused by both card render
     paths (streaming markdown during generation, always-editable text_areas
-    post-stream). Visual styles live in _soap_chip_styles_html(), injected
+    post-stream). Visual styles live in _design_tokens_css(), injected
     once per page render via main()."""
     initial = html.escape(SECTION_INITIALS[name])
     label = html.escape(name.upper())
@@ -794,9 +898,11 @@ def _render_split_view(asr_pipe, vad_model, model, tokenizer) -> None:
 def main() -> None:
     st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
     init_state()
-    # CSS for SOAP chips. Injected once per render so _render_section_header
-    # can emit class-based markup at all card render sites.
-    st.markdown(_soap_chip_styles_html(), unsafe_allow_html=True)
+    # Compact Modern design tokens — typography, color, chrome styles,
+    # animations. Injected once per page render so every helper that emits
+    # class-based markup (top bar, stage chip, SOAP cards, streaming
+    # placeholders) finds its styles already declared.
+    st.markdown(_design_tokens_css(), unsafe_allow_html=True)
     require_hf_token()
 
     # Eager model load — surface any error before the user uploads.

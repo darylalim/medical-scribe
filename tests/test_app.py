@@ -965,3 +965,49 @@ def test_section_colors_are_all_aa_grade():
         # White luminance is 1.0; ratio formula = (lighter + 0.05) / (darker + 0.05)
         ratio = (1.0 + 0.05) / (bg + 0.05)
         assert ratio >= 4.5, f"{name} chip {SECTION_COLORS[name]} contrast {ratio:.2f}:1 < 4.5:1"
+
+
+def test_design_tokens_css_contains_required_classes():
+    """Smoke-test: the injected CSS block must declare every class name that
+    other render functions assume. If a class is removed accidentally, the
+    UI falls back to default Streamlit styling silently — this test catches
+    it."""
+    from app import _design_tokens_css
+
+    css = _design_tokens_css()
+
+    # Token variables
+    for var in [
+        "--color-surface",
+        "--color-canvas",
+        "--color-border",
+        "--color-text",
+        "--color-text-muted",
+        "--color-text-subtle",
+    ]:
+        assert var in css, f"missing CSS variable {var}"
+
+    # Class names referenced by helpers in later tasks
+    for cls in [
+        ".ms-topbar",
+        ".ms-stage-chip",
+        ".ms-stage-static",
+        ".ms-stage-active",
+        ".soap-section-header",
+        ".soap-chip",
+        ".ms-skel-line",
+        ".ms-streaming-cursor",
+    ]:
+        assert cls in css, f"missing CSS class {cls}"
+
+    # Animations
+    for anim in ["@keyframes ms-pulse", "@keyframes ms-shimmer", "@keyframes ms-cursor-blink"]:
+        assert anim in css, f"missing animation {anim}"
+
+
+def test_design_tokens_css_is_wrapped_in_style_tag():
+    from app import _design_tokens_css
+
+    css = _design_tokens_css()
+    assert css.startswith("<style>")
+    assert css.endswith("</style>\n") or css.endswith("</style>")
