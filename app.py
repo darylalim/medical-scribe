@@ -592,6 +592,47 @@ def _design_tokens_css() -> str:
   color: var(--color-text);
 }}
 {soap_chip_rules}
+
+/* State A — chooser cards */
+.ms-chooser-card {{
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--s-6) var(--s-4);
+  text-align: center;
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+}}
+.ms-chooser-card:hover {{ border-color: var(--color-text); }}
+.ms-chooser-title {{
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}}
+.ms-chooser-caption {{
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}}
+.ms-mic-circle {{
+  background: var(--color-text);
+  color: var(--color-surface);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin: 4px auto 0;
+}}
+
+/* Streamlit file uploader dropzone — dashed-border treatment */
+[data-testid="stFileUploaderDropzone"] {{
+  border: 2px dashed #d1d5db !important;
+  background: var(--color-surface) !important;
+}}
 </style>"""
 
 
@@ -708,39 +749,54 @@ def _handle_upload(upload) -> bool:
 
 
 def _render_state_a_chooser() -> None:
-    """State A landing — mic + upload affordances side by side.
+    """State A landing — Record / Upload affordances side by side.
 
-    Called only when `audio_bytes is None` (State A). Caller is
-    responsible for the gating; this function does not check.
+    Each side is a tightly-styled card (.ms-chooser-card) with a heading,
+    caption, and the actual Streamlit input widget below. The audio_input
+    widget gets a decorative 56px black mic affordance above it; the
+    file_uploader's native dropzone is styled into a dashed-border drop
+    zone via global CSS targeting [data-testid='stFileUploaderDropzone'].
 
-    Replaces the prior centered single-column with the upload widget hidden
-    behind 'Or upload an existing recording' expander. The new layout makes
-    both paths first-class so a first-time clinician testing with a sample
-    recording sees upload immediately."""
+    Caller is responsible for the gating; this function does not check
+    `audio_bytes is None`.
+    """
     cols = st.columns([1, 1])
-    with cols[0]:  # noqa: SIM117
-        with st.container(border=True):
-            st.markdown("**Record this visit**")
-            st.caption("Click the mic to start, click again to stop. Audio stays on this device.")
-            recorded = st.audio_input(
-                "Record audio",
-                label_visibility="collapsed",
-                key="audio_input_widget",
-            )
-            if recorded is not None and _handle_upload(recorded):
-                st.rerun()
-    with cols[1]:  # noqa: SIM117
-        with st.container(border=True):
-            st.markdown("**Upload a recording**")
-            st.caption("WAV, MP3, FLAC, or M4A. Max 100 MB.")
-            uploaded = st.file_uploader(
-                "Audio file",
-                type=["wav", "mp3", "flac", "m4a"],
-                label_visibility="collapsed",
-                key="file_uploader_widget",
-            )
-            if uploaded is not None and _handle_upload(uploaded):
-                st.rerun()
+    with cols[0]:
+        st.markdown(
+            '<div class="ms-chooser-card">'
+            '<div class="ms-chooser-title">Record this visit</div>'
+            '<div class="ms-chooser-caption">'
+            "Click the mic to start, click again to stop. Audio stays on this device."
+            "</div>"
+            '<div class="ms-mic-circle">●</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        recorded = st.audio_input(
+            "Record audio",
+            label_visibility="collapsed",
+            key="audio_input_widget",
+        )
+        if recorded is not None and _handle_upload(recorded):
+            st.rerun()
+    with cols[1]:
+        st.markdown(
+            '<div class="ms-chooser-card">'
+            '<div class="ms-chooser-title">Upload a recording</div>'
+            '<div class="ms-chooser-caption">'
+            "WAV, MP3, FLAC, or M4A. Max 100 MB. Drag-and-drop supported."
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        uploaded = st.file_uploader(
+            "Audio file",
+            type=["wav", "mp3", "flac", "m4a"],
+            label_visibility="collapsed",
+            key="file_uploader_widget",
+        )
+        if uploaded is not None and _handle_upload(uploaded):
+            st.rerun()
 
 
 def _render_transcript_pane(asr_pipe, vad_model) -> None:
