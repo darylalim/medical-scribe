@@ -1064,3 +1064,43 @@ def test_stage_chip_html_escapes_label_text():
     markup = _stage_chip_html("<script>")
     assert "<script>" not in markup, "raw <script> tag leaked into chip output"
     assert "&lt;script&gt;" in markup, "escaped form missing from chip output"
+
+
+@pytest.mark.parametrize(
+    "state,expected",
+    [
+        # State A — no audio
+        ({"audio_bytes": None}, ""),
+        # State B — audio present, no transcript yet, no trim result yet
+        (
+            {"audio_bytes": b"x", "audio_name": "v.wav", "tx": None, "tx_trim": None},
+            "recording · v.wav",
+        ),
+        # State C onward — transcript ready, trim result available
+        # (TrimResult is a dataclass, but the helper only reads .original_seconds
+        # and .trimmed_seconds, so a duck-typed namespace is enough for the test)
+        (
+            {
+                "audio_bytes": b"x",
+                "audio_name": "v.wav",
+                "tx": "transcript",
+                "tx_trim": type("TR", (), {"original_seconds": 600.0, "trimmed_seconds": 318.0})(),
+            },
+            "session · 10m 0s · trimmed 47%",
+        ),
+        # Trim result with status="error" or no_speech — original_seconds == trimmed_seconds
+        (
+            {
+                "audio_bytes": b"x",
+                "audio_name": "v.wav",
+                "tx": "transcript",
+                "tx_trim": type("TR", (), {"original_seconds": 60.0, "trimmed_seconds": 60.0})(),
+            },
+            "session · 1m 0s",
+        ),
+    ],
+)
+def test_format_session_meta(state, expected):
+    from app import _format_session_meta
+
+    assert _format_session_meta(state) == expected

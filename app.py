@@ -286,6 +286,29 @@ def format_trim_caption(
     return f"Trimmed {_format_duration(removed)} of silence ({round(ratio * 100)}% of recording)."
 
 
+def _format_session_meta(state: Mapping[str, object]) -> str:
+    """Right-aligned mono-text for the top bar.
+
+    - State A: empty string (no chrome metadata before audio is loaded).
+    - State B (audio present, no transcript): "recording · {filename}".
+    - State C onward: "session · {Xm Ys} · trimmed {N}%" if VAD trimmed
+      anything, otherwise "session · {Xm Ys}".
+    """
+    if state.get("audio_bytes") is None:
+        return ""
+    audio_name = state.get("audio_name") or "audio"
+    if state.get("tx") is None:
+        return f"recording · {audio_name}"
+    trim = state.get("tx_trim")
+    if trim is None or getattr(trim, "original_seconds", 0) <= 0:
+        return f"session · {audio_name}"
+    duration = _format_duration(trim.original_seconds)
+    if getattr(trim, "trimmed_seconds", 0) >= getattr(trim, "original_seconds", 0):
+        return f"session · {duration}"
+    pct = round((1.0 - trim.trimmed_seconds / trim.original_seconds) * 100)
+    return f"session · {duration} · trimmed {pct}%"
+
+
 def compute_unparsed_remainder(soap: str | None, parsed: dict[str, str]) -> str:
     """Return text in `soap` that isn't part of any recognised SOAP section.
 
