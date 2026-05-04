@@ -11,6 +11,9 @@ from mlx_lm.sample_utils import make_sampler
 from medical_scribe.prompts import format_soap_messages
 
 DEFAULT_MODEL_ID = "mlx-community/medgemma-27b-text-it-4bit"
+MODEL_DISPLAY_NAME = "MedGemma-27B (4-bit MLX)"
+"""Human-readable model name for UI surfaces. Update this whenever
+DEFAULT_MODEL_ID is swapped to a different family or quantization."""
 DEFAULT_MAX_TOKENS = 2048
 
 

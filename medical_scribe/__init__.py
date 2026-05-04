@@ -10,6 +10,7 @@ from medical_scribe.device import pick_device
 from medical_scribe.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_ID,
+    MODEL_DISPLAY_NAME,
     load_medgemma,
     stream_soap,
 )
@@ -25,6 +26,7 @@ from medical_scribe.vad import TrimResult, load_vad, trim_silence
 __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_MODEL_ID",
+    "MODEL_DISPLAY_NAME",
     "SECTION_HEADER_RE",
     "SOAP_SECTIONS",
     "TrimResult",

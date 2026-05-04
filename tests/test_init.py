@@ -14,6 +14,7 @@ def test_package_reexports_match_module_level_definitions():
     expected = {
         "DEFAULT_MAX_TOKENS": llm.DEFAULT_MAX_TOKENS,
         "DEFAULT_MODEL_ID": llm.DEFAULT_MODEL_ID,
+        "MODEL_DISPLAY_NAME": llm.MODEL_DISPLAY_NAME,
         "SECTION_HEADER_RE": soap_sections.SECTION_HEADER_RE,
         "SOAP_SECTIONS": soap_sections.SOAP_SECTIONS,
         "TrimResult": vad.TrimResult,
