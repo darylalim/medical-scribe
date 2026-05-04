@@ -933,3 +933,35 @@ def test_initial_state_includes_tx_trim_default_none():
 
     assert "tx_trim" in INITIAL_STATE
     assert INITIAL_STATE["tx_trim"] is None
+
+
+def test_section_colors_have_no_duplicates():
+    """All four SOAP sections must use distinct colors. The indigo-700 swap
+    moves S out of the blue/green collision zone with O — accidentally
+    re-aligning S to a near-O hue would silently regress that fix."""
+    from app import SECTION_COLORS, SOAP_SECTIONS
+
+    values = [SECTION_COLORS[name] for name in SOAP_SECTIONS]
+    assert len(set(values)) == 4, f"SECTION_COLORS has duplicates: {values}"
+
+
+def test_section_colors_are_all_aa_grade():
+    """Every chip color, paired with white (#fff) text, must clear WCAG AA
+    contrast (4.5:1). The all-700 family was chosen so this test passes
+    without per-chip caveats."""
+    from app import SECTION_COLORS, SOAP_SECTIONS
+
+    def relative_luminance(hex_color: str) -> float:
+        h = hex_color.lstrip("#")
+        r, g, b = (int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+        def channel(c: float) -> float:
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    for name in SOAP_SECTIONS:
+        bg = relative_luminance(SECTION_COLORS[name])
+        # White luminance is 1.0; ratio formula = (lighter + 0.05) / (darker + 0.05)
+        ratio = (1.0 + 0.05) / (bg + 0.05)
+        assert ratio >= 4.5, f"{name} chip {SECTION_COLORS[name]} contrast {ratio:.2f}:1 < 4.5:1"

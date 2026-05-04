@@ -50,17 +50,18 @@ MAX_UPLOAD_MB = 100
 SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP_SECTIONS}
 
 # SOAP cards combine color + letter chip; color alone fails for ~8% of
-# male readers. White-on-color chip contrast must clear WCAG AA (4.5:1)
-# — that's why emerald and amber are darkened to -700. Blue and violet
-# at -500 fall just short of AA, but the section name (not the chip) is
-# the primary label, so the lower contrast is acceptable; the colors
-# are browser-verified. Drift guard:
-# tests/test_app.py::test_section_color_and_initial_maps_cover_all_soap_sections.
+# male readers. White-on-color chip contrast must clear WCAG AA (4.5:1).
+# All four chips use the -700 family for uniform visual depth and AA-grade
+# contrast. Subjective uses indigo (not blue) so it stays distinguishable
+# from emerald Objective under deuteranopia (most common color-blindness).
+# Drift guards: tests/test_app.py::test_section_colors_have_no_duplicates,
+# test_section_colors_are_all_aa_grade, and
+# test_section_color_and_initial_maps_cover_all_soap_sections.
 SECTION_COLORS: dict[str, str] = {
-    "Subjective": "#3b82f6",  # blue-500
-    "Objective": "#047857",  # emerald-700 (darkened for contrast)
-    "Assessment": "#b45309",  # amber-700 (darkened for contrast)
-    "Plan": "#8b5cf6",  # violet-500
+    "Subjective": "#4338ca",  # indigo-700
+    "Objective": "#047857",  # emerald-700
+    "Assessment": "#b45309",  # amber-700
+    "Plan": "#6d28d9",  # violet-700
 }
 
 SECTION_INITIALS: dict[str, str] = {
