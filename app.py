@@ -924,11 +924,25 @@ def _render_soap_pane(model, tokenizer) -> None:
         st.markdown("_Awaiting transcript…_")
         return
 
-    # State C (transcript ready, no SOAP, not streaming): placeholder.
+    # State C (transcript ready, no SOAP, not streaming): "what to expect"
+    # placeholder. Names the model, rough token budget, and typical
+    # wall-clock so the clinician sees the work that's about to happen.
     if soap is None and not is_streaming:
         st.markdown(
-            "_Click **Generate SOAP note** on the left to draft a note from "
-            "the current transcript._"
+            "<div style='text-align:center; padding-top:48px; "
+            "color: var(--color-text-muted); font-size:13px;'>"
+            "<div style='color: var(--color-text); font-weight:500; margin-bottom:6px;'>"
+            "Ready to draft a SOAP note"
+            "</div>"
+            "<div style='color: var(--color-text-subtle); line-height:1.6;'>"
+            "MedGemma-27B (4-bit MLX), ~1500 tokens<br>"
+            "Streamed live; typically 20–40 seconds."  # noqa: RUF001
+            "</div>"
+            "<div style='margin-top:16px; color: var(--color-text-muted);'>"
+            "Click <b>Generate SOAP note</b> on the left to start."
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
         )
         return
 

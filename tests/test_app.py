@@ -727,18 +727,27 @@ def test_state_b_right_pane_shows_awaiting_transcript_placeholder(booted_app, mo
 
 def test_state_c_right_pane_shows_click_generate_placeholder(booted_app):
     """In State C (transcript ready, no SOAP, not streaming), the right pane
-    shows the 'Click Generate SOAP note on the left…' placeholder. Locks the
-    'no blank pane' UX guarantee — without this, the user would see only the
-    transcript on the left and an empty right column until they click Generate."""
+    shows the enhanced 'what to expect' placeholder with model name and timing
+    context. Locks the 'no blank pane' UX guarantee — without this, the user
+    would see only the transcript on the left and an empty right column until
+    they click Generate."""
     at = booted_app
     _seed_state_c(at)
     at.run(timeout=30)
     assert not at.exception, f"render raised: {at.exception}"
 
     rendered_md = " ".join(md.value for md in at.markdown)
-    assert "Click **Generate SOAP note**" in rendered_md, (
-        f"State C right pane should show the 'Click Generate SOAP note…' "
-        f"placeholder; rendered markdown: {rendered_md!r}"
+    assert "Ready to draft a SOAP note" in rendered_md, (
+        f"State C right pane should show 'Ready to draft a SOAP note' heading; "
+        f"rendered markdown: {rendered_md!r}"
+    )
+    assert "MedGemma-27B" in rendered_md, (
+        f"State C right pane should name the model (MedGemma-27B); "
+        f"rendered markdown: {rendered_md!r}"
+    )
+    assert "Click <b>Generate SOAP note</b>" in rendered_md, (
+        f"State C right pane should show 'Click <b>Generate SOAP note</b>' CTA; "
+        f"rendered markdown: {rendered_md!r}"
     )
 
 
