@@ -139,6 +139,26 @@ def reset_state() -> None:
         st.session_state[k] = v
 
 
+def _clear_soap_state(state: MutableMapping[str, object]) -> None:
+    """Reset every SOAP-related session-state key.
+
+    Covers: the full SOAP markdown blob, the truncation flag, the four
+    per-section edit buffers, the four edit-mode flags, and the four
+    cancel-revert snapshots. Called by `clear_downstream_state`'s two
+    branches and the Regenerate click handler in `_render_transcript_pane`
+    — keeping the three call sites in one helper prevents drift if a new
+    SOAP-related key is added to INITIAL_STATE.
+    """
+    state["soap"] = None
+    state["soap_truncated"] = False
+    for key in SECTION_KEY_MAP.values():
+        state[key] = ""
+    for key in SECTION_EDITING_KEY_MAP.values():
+        state[key] = False
+    for key in SECTION_SNAPSHOT_KEY_MAP.values():
+        state[key] = None
+
+
 def clear_downstream_state(state: MutableMapping[str, object], after: str) -> None:
     """Enforce the spec's state invariants. `after` names the last valid stage.
 
@@ -150,23 +170,9 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
         state["tx"] = None
         state["tx_edit"] = ""
         state["tx_trim"] = None
-        state["soap"] = None
-        state["soap_truncated"] = False
-        for key in SECTION_KEY_MAP.values():
-            state[key] = ""
-        for key in SECTION_EDITING_KEY_MAP.values():
-            state[key] = False
-        for key in SECTION_SNAPSHOT_KEY_MAP.values():
-            state[key] = None
+        _clear_soap_state(state)
     elif after == "tx":
-        state["soap"] = None
-        state["soap_truncated"] = False
-        for key in SECTION_KEY_MAP.values():
-            state[key] = ""
-        for key in SECTION_EDITING_KEY_MAP.values():
-            state[key] = False
-        for key in SECTION_SNAPSHOT_KEY_MAP.values():
-            state[key] = None
+        _clear_soap_state(state)
 
 
 EXT_TO_MIME = {
@@ -991,18 +997,9 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
                     "transcription before generating a SOAP note."
                 )
                 return
-            # New generation: discard any in-progress section edits AND
-            # the edit-mode meta-state. Without clearing *_editing and
-            # *_edit_snapshot, a Cancel after Regenerate can restore the
-            # pre-regenerate body via the stale snapshot, silently
-            # overwriting the freshly streamed SOAP.
-            st.session_state["soap_truncated"] = False
-            for key in SECTION_KEY_MAP.values():
-                st.session_state[key] = ""
-            for key in SECTION_EDITING_KEY_MAP.values():
-                st.session_state[key] = False
-            for key in SECTION_SNAPSHOT_KEY_MAP.values():
-                st.session_state[key] = None
+            # New generation: discard any in-progress SOAP state and the
+            # edit-mode meta-state via the shared helper, then start streaming.
+            _clear_soap_state(cast(MutableMapping[str, object], st.session_state))
             st.session_state["_streaming"] = True
             st.rerun()
 
