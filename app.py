@@ -667,17 +667,25 @@ def _design_tokens_css() -> str:
 </style>"""
 
 
-def _render_section_header(name: str) -> None:
+def _render_section_header(name: str, *, muted: bool = False) -> None:
     """Colored letter-chip + section name. Reused by both card render
     paths (streaming markdown during generation, always-editable text_areas
     post-stream). Visual styles live in _design_tokens_css(), injected
-    once per page render via main()."""
+    once per page render via main().
+
+    `muted=True` (used by the streaming-pane skeleton state) renders the
+    chip at 0.4 opacity and the section name in --color-text-subtle, so
+    pending cards visually recede vs active/completed cards.
+    """
     initial = html.escape(SECTION_INITIALS[name])
     label = html.escape(name.upper())
+    chip_opacity = "0.4" if muted else "1.0"
+    label_color = "var(--color-text-subtle)" if muted else "var(--color-text)"
     st.markdown(
         f'<div class="soap-section-header">'
-        f'<span class="soap-chip soap-chip-{name.lower()}">{initial}</span>'
-        f'<span class="soap-section-name">{label}</span>'
+        f'<span class="soap-chip soap-chip-{name.lower()}" '
+        f'style="opacity:{chip_opacity}">{initial}</span>'
+        f'<span class="soap-section-name" style="color:{label_color}">{label}</span>'
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -930,47 +938,33 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
             st.rerun()
 
 
-def _render_streaming_cards(section_states: list[tuple[str, str, str]]) -> None:
-    """Render the four streaming SOAP cards based on per-section status.
+def _render_streaming_card(name: str, status: str, body: str) -> None:
+    """Render one streaming SOAP card based on its status.
 
-    `section_states` is the output of `compute_section_states` — one tuple
-    per section in canonical SOAP order. `pending` cards show shimmering
-    skeleton lines and a muted chip; `active` cards show streamed text plus
-    a blinking cursor; `completed` cards render normally.
+    `pending` → muted chip + 3 shimmering skeleton lines.
+    `active` → body markdown + a blinking cursor span.
+    `completed` → plain body markdown.
 
-    Used only during State D. State E uses `_render_section_card` instead
-    (which adds the read/edit toggle).
+    Reuses `_render_section_header` (with `muted=True` for pending) so
+    both the streaming and post-stream paths share a single chip+name
+    helper, per the CLAUDE.md invariant.
     """
-    for name, status, body in section_states:
-        with st.container(border=True):
-            chip_opacity = "1.0" if status != "pending" else "0.4"
-            initial = html.escape(SECTION_INITIALS[name])
-            label = html.escape(name.upper())
-            label_color = "var(--color-text)" if status != "pending" else "var(--color-text-subtle)"
+    with st.container(border=True):
+        _render_section_header(name, muted=(status == "pending"))
+        if status == "pending":
             st.markdown(
-                f'<div class="soap-section-header">'
-                f'<span class="soap-chip soap-chip-{name.lower()}" '
-                f'style="opacity:{chip_opacity}">{initial}</span>'
-                f'<span class="soap-section-name" style="color:{label_color}">{label}</span>'
-                f"</div>",
+                '<div style="padding-left:30px;">'
+                '<div class="ms-skel-line" style="width:80%"></div>'
+                '<div class="ms-skel-line" style="width:60%"></div>'
+                '<div class="ms-skel-line" style="width:70%"></div>'
+                "</div>",
                 unsafe_allow_html=True,
             )
-            if status == "pending":
-                st.markdown(
-                    '<div style="padding-left:30px;">'
-                    '<div class="ms-skel-line" style="width:80%"></div>'
-                    '<div class="ms-skel-line" style="width:60%"></div>'
-                    '<div class="ms-skel-line" style="width:70%"></div>'
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-            elif status == "active":
-                # Streamed text + cursor. Body is markdown; cursor span is
-                # appended via raw HTML so the animation runs.
-                st.markdown(body)
-                st.markdown('<span class="ms-streaming-cursor"></span>', unsafe_allow_html=True)
-            else:  # completed
-                st.markdown(body)
+        elif status == "active":
+            st.markdown(body)
+            st.markdown('<span class="ms-streaming-cursor"></span>', unsafe_allow_html=True)
+        else:  # completed
+            st.markdown(body)
 
 
 def _render_soap_pane(model, tokenizer) -> None:
@@ -1022,30 +1016,37 @@ def _render_soap_pane(model, tokenizer) -> None:
         )
         return
 
-    # State D: streaming with skeleton cards.
+    # State D: streaming with per-card skeleton placeholders.
     #
-    # Render all four section cards from t=0 with three per-card states:
-    # "pending" (skeleton + muted chip), "active" (live text + cursor),
-    # "completed" (finalized text). compute_section_states drives the per-
-    # tick render; tuple-equality on the section_states list is the throttle
-    # guard analogous to last_status — re-render the cards container only
-    # when the per-card statuses actually change.
+    # Render all four cards from t=0 with their own st.empty() placeholders.
+    # On each chunk, compute_section_states yields the new per-card states;
+    # we update only the placeholders whose (name, status, body) tuple
+    # actually changed. Pending/completed cards stay stable across chunks
+    # (no DOM churn); only the active card re-renders as its body grows.
     if is_streaming:
-        cards_placeholder = st.empty()
         status_placeholder = st.empty()
         status_placeholder.markdown(f"_{streaming_status_label([])}_")
-        buf = ""
-        meta: dict[str, object] = {}
-        last_section_states: list[tuple[str, str, str]] | None = None
-        last_status: str | None = None
-        # Render initial all-pending cards.
-        section_states_initial: list[tuple[str, str, str]] = [
+
+        # Pre-create one placeholder per card so we can update them
+        # independently inside the streaming loop.
+        card_placeholders: list = []
+        for _ in SOAP_SECTIONS:
+            card_placeholders.append(st.empty())
+
+        # Initial render: every card pending.
+        initial_states: list[tuple[str, str, str]] = [
             (name, "pending", "") for name in SOAP_SECTIONS
         ]
-        with cards_placeholder.container():
-            _render_streaming_cards(section_states_initial)
-        last_section_states = section_states_initial
+        for placeholder, (name, status, body) in zip(
+            card_placeholders, initial_states, strict=True
+        ):
+            with placeholder.container():
+                _render_streaming_card(name, status, body)
+        last_card_states = list(initial_states)
 
+        buf = ""
+        meta: dict[str, object] = {}
+        last_status: str | None = None
         try:
             for chunk in stream_soap(
                 model,
@@ -1063,12 +1064,18 @@ def _render_soap_pane(model, tokenizer) -> None:
                     status_placeholder.markdown(f"_{status_text}_")
                     last_status = status_text
 
-                if section_states != last_section_states:
-                    with cards_placeholder.container():
-                        _render_streaming_cards(section_states)
-                    last_section_states = section_states
+                # Per-card throttle: re-render only the cards whose
+                # (name, status, body) actually changed since last chunk.
+                for i, (state, last_state) in enumerate(
+                    zip(section_states, last_card_states, strict=True)
+                ):
+                    if state != last_state:
+                        with card_placeholders[i].container():
+                            _render_streaming_card(*state)
+                        last_card_states[i] = state
         except Exception as exc:
-            cards_placeholder.empty()
+            for placeholder in card_placeholders:
+                placeholder.empty()
             status_placeholder.empty()
             show_error("SOAP generation failed", exc)
             st.session_state["soap"] = None
