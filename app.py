@@ -830,15 +830,35 @@ def _render_transcript_pane(asr_pipe, vad_model) -> None:
     # segments before MedASR sees the audio. trim_silence never raises
     # (medical_scribe.vad invariant); failures return status="error" and
     # the original bytes pass through unchanged.
+    #
+    # Phased progress: st.status containers expose the two-step pipeline
+    # (trim → transcribe). The trim phase reports concrete numbers from
+    # the TrimResult; the transcribe phase reports model + audio length.
     if tx is None:
-        with st.spinner("Trimming silence and transcribing audio…"):
+        with st.status("Preparing transcription…", expanded=True) as status:
+            status.update(label="Trimming silence…", state="running")
             trim_result = trim_silence(audio_bytes, vad_model)
+            if trim_result.status == "trimmed" and trim_result.original_seconds > 0:
+                pct = round(
+                    (1.0 - trim_result.trimmed_seconds / trim_result.original_seconds) * 100
+                )
+                removed = trim_result.original_seconds - trim_result.trimmed_seconds
+                st.write(f"✓ Trimmed {_format_duration(removed)} of silence ({pct}%)")
+            elif trim_result.status == "no_speech":
+                st.write("⚠ No speech detected — transcribing the full recording")
+            elif trim_result.status == "error":
+                st.write("⚠ Couldn't trim silence — transcribing the full recording")
+
+            status.update(label="Transcribing audio…", state="running")
             try:
                 text = transcribe(asr_pipe, trim_result.audio_bytes)
             except Exception as exc:
+                status.update(label="Transcription failed", state="error")
                 show_error("Could not transcribe audio", exc)
                 reset_state()
                 st.stop()
+            status.update(label="Transcription complete", state="complete")
+
         st.session_state["tx_trim"] = trim_result
         st.session_state["tx"] = text
         st.session_state["tx_edit"] = text
