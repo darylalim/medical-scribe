@@ -74,8 +74,7 @@ def _seed_state_e(at) -> None:
 def _fresh_state() -> dict:
     """All session-state keys populated to non-default values, so
     `clear_downstream_state` tests can verify exactly which keys it
-    touches and which it leaves alone (workflow flags are
-    stage-orthogonal and must survive both clear paths)."""
+    touches and which it leaves alone."""
     return {
         "audio_bytes": b"abc",
         "audio_name": "a.wav",
@@ -89,6 +88,14 @@ def _fresh_state() -> dict:
         "objective_edit": "edited o",
         "assessment_edit": "edited a",
         "plan_edit": "edited p",
+        "subjective_editing": True,
+        "objective_editing": True,
+        "assessment_editing": True,
+        "plan_editing": True,
+        "subjective_edit_snapshot": "snap s",
+        "objective_edit_snapshot": "snap o",
+        "assessment_edit_snapshot": "snap a",
+        "plan_edit_snapshot": "snap p",
         "_streaming": True,
         "_show_reset_dialog": True,
     }
@@ -1272,3 +1279,108 @@ def test_compute_section_states_preserves_section_order():
     # → completed.
     assert states[0][1] == "completed"
     assert states[3][1] == "active"
+
+
+def test_section_editing_key_map_covers_all_soap_sections():
+    from app import SECTION_EDITING_KEY_MAP, SOAP_SECTIONS
+
+    for name in SOAP_SECTIONS:
+        assert name in SECTION_EDITING_KEY_MAP
+    assert set(SECTION_EDITING_KEY_MAP.keys()) == set(SOAP_SECTIONS)
+
+
+def test_section_snapshot_key_map_covers_all_soap_sections():
+    from app import SECTION_SNAPSHOT_KEY_MAP, SOAP_SECTIONS
+
+    for name in SOAP_SECTIONS:
+        assert name in SECTION_SNAPSHOT_KEY_MAP
+
+
+def test_initial_state_includes_editing_flags():
+    from app import INITIAL_STATE, SECTION_EDITING_KEY_MAP
+
+    for key in SECTION_EDITING_KEY_MAP.values():
+        assert key in INITIAL_STATE, f"INITIAL_STATE missing {key}"
+        assert INITIAL_STATE[key] is False
+
+
+def test_initial_state_includes_edit_snapshots():
+    from app import INITIAL_STATE, SECTION_SNAPSHOT_KEY_MAP
+
+    for key in SECTION_SNAPSHOT_KEY_MAP.values():
+        assert key in INITIAL_STATE, f"INITIAL_STATE missing {key}"
+        assert INITIAL_STATE[key] is None
+
+
+def test_clear_downstream_state_after_audio_resets_editing_flags_and_snapshots():
+    from app import clear_downstream_state
+
+    state = _fresh_state()
+    clear_downstream_state(state, after="audio")
+
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert state[key] is False, f"{key} should be reset to False"
+    for key in (
+        "subjective_edit_snapshot",
+        "objective_edit_snapshot",
+        "assessment_edit_snapshot",
+        "plan_edit_snapshot",
+    ):
+        assert state[key] is None, f"{key} should be reset to None"
+
+
+def test_clear_downstream_state_after_tx_resets_editing_flags_and_snapshots():
+    from app import clear_downstream_state
+
+    state = _fresh_state()
+    clear_downstream_state(state, after="tx")
+
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert state[key] is False
+    for key in (
+        "subjective_edit_snapshot",
+        "objective_edit_snapshot",
+        "assessment_edit_snapshot",
+        "plan_edit_snapshot",
+    ):
+        assert state[key] is None
+
+
+def test_populate_section_edit_buffers_does_not_touch_editing_flags():
+    """Cards must always land in read mode after a stream completes —
+    populate_section_edit_buffers fills *_edit but not *_editing."""
+    from collections.abc import MutableMapping
+
+    from app import populate_section_edit_buffers
+
+    state: MutableMapping[str, object] = {
+        "subjective_editing": True,
+        "objective_editing": True,
+        "assessment_editing": True,
+        "plan_editing": True,
+        "subjective_edit": "",
+        "objective_edit": "",
+        "assessment_edit": "",
+        "plan_edit": "",
+    }
+    populate_section_edit_buffers(
+        state, "## Subjective\nA\n## Objective\nB\n## Assessment\nC\n## Plan\nD"
+    )
+    # *_editing should be unchanged.
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert state[key] is True, f"populate_section_edit_buffers must not touch {key}"

@@ -49,6 +49,19 @@ MAX_UPLOAD_MB = 100
 # test_initial_state_keys_match_section_key_map catches that drift.
 SECTION_KEY_MAP: dict[str, str] = {name: f"{name.lower()}_edit" for name in SOAP_SECTIONS}
 
+# Per-section edit-mode flag keys. Toggled by `toggle_section_edit`. Read
+# by `_render_section_card` to branch read-mode vs edit-mode rendering.
+# Drift guard: tests/test_app.py::test_section_editing_key_map_covers_all_soap_sections.
+SECTION_EDITING_KEY_MAP: dict[str, str] = {
+    name: f"{name.lower()}_editing" for name in SOAP_SECTIONS
+}
+
+# Per-section edit-cancel snapshot keys. Populated when entering edit mode;
+# cleared on Save (commit) or Cancel (revert + clear).
+SECTION_SNAPSHOT_KEY_MAP: dict[str, str] = {
+    name: f"{name.lower()}_edit_snapshot" for name in SOAP_SECTIONS
+}
+
 # SOAP cards combine color + letter chip; color alone fails for ~8% of
 # male readers. White-on-color chip contrast must clear WCAG AA (4.5:1).
 # All four chips use the -700 family for uniform visual depth and AA-grade
@@ -91,6 +104,18 @@ INITIAL_STATE = {
     "objective_edit": "",
     "assessment_edit": "",
     "plan_edit": "",
+    # Per-section edit-mode flags (False = read mode, True = edit mode).
+    # Driven by the pencil-icon click in _render_section_card.
+    "subjective_editing": False,
+    "objective_editing": False,
+    "assessment_editing": False,
+    "plan_editing": False,
+    # Per-section snapshots for cancel-revert. Populated on edit-enter;
+    # cleared on Save or Cancel.
+    "subjective_edit_snapshot": None,
+    "objective_edit_snapshot": None,
+    "assessment_edit_snapshot": None,
+    "plan_edit_snapshot": None,
     # Streaming flag — set when SOAP generation is in progress.
     # Read via st.session_state.get(...) elsewhere; including the default
     # here ensures reset_state() clears it on `+ New session`.
@@ -126,17 +151,21 @@ def clear_downstream_state(state: MutableMapping[str, object], after: str) -> No
         state["tx_trim"] = None
         state["soap"] = None
         state["soap_truncated"] = False
-        state["subjective_edit"] = ""
-        state["objective_edit"] = ""
-        state["assessment_edit"] = ""
-        state["plan_edit"] = ""
+        for key in SECTION_KEY_MAP.values():
+            state[key] = ""
+        for key in SECTION_EDITING_KEY_MAP.values():
+            state[key] = False
+        for key in SECTION_SNAPSHOT_KEY_MAP.values():
+            state[key] = None
     elif after == "tx":
         state["soap"] = None
         state["soap_truncated"] = False
-        state["subjective_edit"] = ""
-        state["objective_edit"] = ""
-        state["assessment_edit"] = ""
-        state["plan_edit"] = ""
+        for key in SECTION_KEY_MAP.values():
+            state[key] = ""
+        for key in SECTION_EDITING_KEY_MAP.values():
+            state[key] = False
+        for key in SECTION_SNAPSHOT_KEY_MAP.values():
+            state[key] = None
 
 
 EXT_TO_MIME = {
