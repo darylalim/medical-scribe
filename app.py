@@ -202,6 +202,26 @@ def _stage_chip_html(label: str) -> str:
     )
 
 
+def _topbar_html(*, stage_label: str, meta: str) -> str:
+    """Title + stage chip + (optional) right-aligned meta.
+
+    Renders inline; the New session button is rendered separately by
+    `_render_topbar` as a real `st.button` in the right column of an
+    `st.columns([8, 2])` split, so the click handler can drive the
+    `_show_reset_dialog` flag.
+    """
+    chip_html = _stage_chip_html(stage_label)
+    parts = [
+        '<div class="ms-topbar">',
+        '<span class="ms-topbar-title">Medical Scribe</span>',
+        chip_html,
+    ]
+    if meta:
+        parts.append(f'<span class="ms-topbar-meta">{html.escape(meta)}</span>')
+    parts.append("</div>")
+    return "".join(parts)
+
+
 def update_truncation_flag(state: MutableMapping[str, object], meta: Mapping[str, object]) -> None:
     """Set state['soap_truncated'] based on streaming meta's finish_reason."""
     state["soap_truncated"] = meta.get("finish_reason") == "length"
@@ -591,19 +611,40 @@ def _render_section_header(name: str) -> None:
     )
 
 
-def _render_header() -> None:
-    """Top header bar: app title (left) + stage label (right)."""
-    cols = st.columns([3, 5])
+def _render_topbar() -> None:
+    """Top bar — replaces both the previous header and sidebar.
+
+    The title + stage chip + meta block is rendered as a single markdown
+    HTML span (left column of an 8/2 split). The `+ New session` button is
+    a real st.button in the right column so the click drives the
+    `_show_reset_dialog` flag and confirm dialog (unchanged behavior; only
+    the placement moved).
+    """
+    state = cast(Mapping[str, object], st.session_state)
+    stage_label = derive_stage_label(state)
+    meta = _format_session_meta(state)
+
+    cols = st.columns([8, 2])
     with cols[0]:
-        st.markdown("### Medical Scribe")
-    with cols[1]:
-        stage_label = derive_stage_label(cast(Mapping[str, object], st.session_state))
         st.markdown(
-            f"<div style='text-align:right; padding-top:8px; color:#666'>"
-            f"<em>{html.escape(stage_label)}</em></div>",
+            _topbar_html(stage_label=stage_label, meta=meta),
             unsafe_allow_html=True,
         )
-    st.divider()
+    with cols[1]:
+        if st.button(
+            "+ New session",
+            key="new_session_btn",
+            use_container_width=True,
+        ):
+            if st.session_state.get("audio_bytes") is None:
+                reset_state()
+                st.rerun()
+            else:
+                st.session_state["_show_reset_dialog"] = True
+                st.rerun()
+
+    if st.session_state.get("_show_reset_dialog"):
+        _confirm_new_session_dialog()
 
 
 @st.dialog("Discard this session?")
@@ -632,25 +673,6 @@ def _confirm_new_session_dialog() -> None:
         ):
             reset_state()
             st.rerun()
-
-
-def _render_sidebar() -> None:
-    """Sidebar: `+ New session` button. In State A (no audio loaded) the
-    click is direct; otherwise it opens a confirmation dialog so a stray
-    click can't wipe an in-progress draft."""
-    with st.sidebar:
-        if st.button(
-            "+ New session", key="new_session_btn", type="primary", use_container_width=True
-        ):
-            if st.session_state.get("audio_bytes") is None:
-                reset_state()
-                st.rerun()
-            else:
-                st.session_state["_show_reset_dialog"] = True
-                st.rerun()
-
-    if st.session_state.get("_show_reset_dialog"):
-        _confirm_new_session_dialog()
 
 
 def _handle_upload(upload) -> bool:
@@ -982,8 +1004,7 @@ def main() -> None:
             show_error("Failed to load Silero VAD", exc)
             st.stop()
 
-    _render_header()
-    _render_sidebar()
+    _render_topbar()
 
     # Dispatch by state. A → chooser; B/C → split view (transcript pane
     # handles the spinner-during-transcribe sub-state internally).

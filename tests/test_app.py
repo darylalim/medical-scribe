@@ -227,16 +227,16 @@ def test_update_truncation_flag(initial, meta, expected):
 
 
 def test_app_boots_to_state_a_with_models_mocked(booted_app):
-    """Smoke test for the split-view shell: header + sidebar + State-A chooser."""
+    """Smoke test for the split-view shell: top bar + State-A chooser."""
     at = booted_app
 
-    # Header markdown contains "Medical Scribe".
+    # Top bar markdown contains "Medical Scribe".
     rendered_md = " ".join(md.value for md in at.markdown)
     assert "Medical Scribe" in rendered_md
 
-    # Sidebar has a `+ New session` button.
-    sidebar_button_labels = [b.label for b in at.sidebar.button]
-    assert any("New session" in label for label in sidebar_button_labels)
+    # New session button is in the main body (keyed), not the sidebar.
+    main_button_keys = [b.key for b in at.button]
+    assert "new_session_btn" in main_button_keys
 
     # State-A chooser renders both affordances. Tab buttons no longer exist.
     main_button_labels = [b.label for b in at.button]
@@ -248,14 +248,16 @@ def test_app_boots_to_state_a_with_models_mocked(booted_app):
 
 
 def test_new_session_in_state_a_bypasses_dialog(booted_app):
-    """Regression guard for `_render_sidebar`'s State-A bypass:
+    """Regression guard for the top-bar New session State-A bypass:
     when no audio is loaded there's nothing to lose, so clicking
     + New session must NOT open the confirmation dialog. Catches the
     case where the gating on `audio_bytes` is removed or inverted."""
     at = booted_app
 
-    new_session_btn = next(b for b in at.sidebar.button if "New session" in b.label)
-    new_session_btn.click().run(timeout=30)
+    # Find the New session button by its key in the main column.
+    new_session = next(b for b in at.button if b.key == "new_session_btn")
+    new_session.click()
+    at.run()
     assert not at.exception, f"click raised: {at.exception}"
 
     # Bypass path took effect: dialog flag stayed False, no dialog opens.
@@ -263,13 +265,13 @@ def test_new_session_in_state_a_bypasses_dialog(booted_app):
 
 
 def test_new_session_with_audio_opens_dialog(booted_app):
-    """Regression guard for the destructive-confirm half of
-    `_render_sidebar`: when audio is loaded the click must arm the
+    """Regression guard for the destructive-confirm half of the top-bar
+    New session button: when audio is loaded the click must arm the
     dialog (set `_show_reset_dialog=True`) and must NOT wipe state.
     Catches the case where the bypass branch fires in both directions."""
     at = booted_app
 
-    # Inject a loaded-audio state and re-render so the sidebar sees it.
+    # Inject a loaded-audio state and re-render so the top bar sees it.
     at.session_state["audio_bytes"] = b"fake-audio-bytes"
     at.session_state["audio_name"] = "fake.wav"
     at.session_state["audio_hash"] = "fake-hash"
@@ -278,8 +280,10 @@ def test_new_session_with_audio_opens_dialog(booted_app):
     at.run(timeout=30)
     assert not at.exception
 
-    new_session_btn = next(b for b in at.sidebar.button if "New session" in b.label)
-    new_session_btn.click().run(timeout=30)
+    # Find the New session button by its key in the main column.
+    new_session = next(b for b in at.button if b.key == "new_session_btn")
+    new_session.click()
+    at.run(timeout=30)
     assert not at.exception, f"click raised: {at.exception}"
 
     # Dialog armed; underlying state preserved (the dialog gates the wipe).
@@ -1116,3 +1120,72 @@ def test_format_session_meta(state, expected):
     from app import _format_session_meta
 
     assert _format_session_meta(state) == expected
+
+
+# ---------------------------------------------------------------------------
+# Task 5: _topbar_html unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_topbar_html_includes_title_and_chip_and_meta():
+    from app import _topbar_html
+
+    html_out = _topbar_html(stage_label="SOAP ready", meta="session · 9m 04s · trimmed 47%")
+    assert 'class="ms-topbar"' in html_out
+    assert "Medical Scribe" in html_out
+    assert "ms-stage-chip" in html_out
+    assert "SOAP ready" in html_out
+    assert "session · 9m 04s · trimmed 47%" in html_out
+
+
+def test_topbar_html_omits_meta_div_when_empty():
+    """State A has no meta — the helper should not render an empty
+    .ms-topbar-meta span (would create a stray clickable element)."""
+    from app import _topbar_html
+
+    html_out = _topbar_html(stage_label="No audio loaded", meta="")
+    assert "ms-topbar-meta" not in html_out
+
+
+def test_topbar_html_escapes_meta_string():
+    from app import _topbar_html
+
+    html_out = _topbar_html(stage_label="SOAP ready", meta="<script>alert(1)</script>")
+    assert "<script>alert(1)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+# ---------------------------------------------------------------------------
+# Task 5: AppTest scenarios for topbar and new-session button
+# ---------------------------------------------------------------------------
+
+
+def test_topbar_renders_in_state_a(booted_app):
+    """In State A, the top bar renders with title, "No audio loaded" chip,
+    and the New session button."""
+    at = booted_app
+
+    # Title and chip live inside markdown; verify the inline HTML.
+    markdown_blocks = [m.value for m in at.markdown]
+    joined = "\n".join(markdown_blocks)
+    assert "Medical Scribe" in joined
+    assert "No audio loaded" in joined
+    assert "ms-stage-static" in joined
+
+    # New session button is keyed:
+    assert any(b.key == "new_session_btn" for b in at.button), "New session button missing"
+
+
+def test_topbar_meta_renders_in_state_e(booted_app):
+    """Once a SOAP draft exists, the top bar's mono-text meta should appear."""
+    at = booted_app
+    _seed_state_e(at)
+    at.session_state["tx_trim"] = type(
+        "TR", (), {"original_seconds": 540.0, "trimmed_seconds": 254.0, "status": "trimmed"}
+    )()
+    at.run(timeout=30)
+
+    markdown_blocks = [m.value for m in at.markdown]
+    joined = "\n".join(markdown_blocks)
+    assert "session · 9m 0s · trimmed 53%" in joined
+    assert "SOAP ready" in joined
