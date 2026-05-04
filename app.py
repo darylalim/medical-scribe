@@ -935,7 +935,9 @@ def _render_soap_pane(model, tokenizer) -> None:
             "Ready to draft a SOAP note"
             "</div>"
             "<div style='color: var(--color-text-subtle); line-height:1.6;'>"
-            "MedGemma-27B (4-bit MLX), ~1500 tokens<br>"
+            # "MedGemma-27B (4-bit MLX)" is hand-typed; sync with DEFAULT_MODEL_ID
+            # in medical_scribe/llm.py if that ever changes.
+            f"MedGemma-27B (4-bit MLX), ~{DEFAULT_MAX_TOKENS} tokens<br>"
             "Streamed live; typically 20–40 seconds."  # noqa: RUF001
             "</div>"
             "<div style='margin-top:16px; color: var(--color-text-muted);'>"

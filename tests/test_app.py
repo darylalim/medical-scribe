@@ -745,6 +745,11 @@ def test_state_c_right_pane_shows_click_generate_placeholder(booted_app):
         f"State C right pane should name the model (MedGemma-27B); "
         f"rendered markdown: {rendered_md!r}"
     )
+    # Token count is interpolated from DEFAULT_MAX_TOKENS so the displayed
+    # value can't drift from the real budget passed to stream_soap.
+    from medical_scribe import DEFAULT_MAX_TOKENS
+
+    assert f"~{DEFAULT_MAX_TOKENS} tokens" in rendered_md
     assert "Click <b>Generate SOAP note</b>" in rendered_md, (
         f"State C right pane should show 'Click <b>Generate SOAP note</b>' CTA; "
         f"rendered markdown: {rendered_md!r}"
