@@ -1294,6 +1294,7 @@ def test_section_snapshot_key_map_covers_all_soap_sections():
 
     for name in SOAP_SECTIONS:
         assert name in SECTION_SNAPSHOT_KEY_MAP
+    assert set(SECTION_SNAPSHOT_KEY_MAP.keys()) == set(SOAP_SECTIONS)
 
 
 def test_initial_state_includes_editing_flags():
