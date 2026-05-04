@@ -1581,3 +1581,147 @@ def test_regenerate_while_editing_clears_editing_flags_and_snapshots(booted_app)
         "plan_edit_snapshot",
     ):
         assert at.session_state[key] is None, f"{key} should be None after Regenerate"
+
+
+def test_full_user_flow_record_to_copy(booted_app):
+    """End-to-end smoke test of the five-state machine, exercising the
+    transitions between states. Each step synthesizes state changes
+    (rather than driving real ASR / streaming) and verifies the wiring
+    that connects per-state renders.
+
+    The per-helper unit tests cover their slice; this test catches
+    regressions in the seams between slices — e.g., an `_streaming` flag
+    that doesn't get cleared on stream end, or a `populate_section_edit_buffers`
+    call that doesn't run after the stream loop.
+    """
+    at = booted_app
+
+    # ---- State A: no audio loaded ----
+    assert at.session_state["audio_bytes"] is None
+    actual_keys = {b.key for b in at.button if b.key}
+    assert "new_session_btn" in actual_keys, "+ New session button missing in State A"
+
+    # ---- Transition A → B: seed audio ----
+    at.session_state["audio_bytes"] = b"fake-audio"
+    at.session_state["audio_name"] = "visit.wav"
+    at.session_state["audio_hash"] = "deadbeef"
+    at.run(timeout=30)
+
+    # State B: top bar shows "Transcribing…" (active chip), right pane
+    # shows the awaiting placeholder.
+    markdown_blocks = " ".join(m.value for m in at.markdown)
+    assert "Transcribing" in markdown_blocks, "State B chip should show Transcribing label"
+    assert "ms-stage-active" in markdown_blocks, "State B chip should be active variant"
+    assert "Awaiting transcript" in markdown_blocks, "State B right pane should show placeholder"
+
+    # ---- Transition B → C: seed transcript + trim metadata ----
+    # Re-seed audio_bytes because the State-B run above triggers _render_transcript_pane's
+    # transcription branch (tx is None), which calls reset_state() on ASR failure and
+    # clears audio_bytes.  The test synthesises the post-transcription state here.
+    at.session_state["audio_bytes"] = b"fake-audio"
+    at.session_state["audio_name"] = "visit.wav"
+    at.session_state["audio_hash"] = "deadbeef"
+    at.session_state["tx"] = "Patient reports chest pain."
+    at.session_state["tx_edit"] = "Patient reports chest pain."
+    at.session_state["tx_trim"] = type(
+        "TR", (), {"original_seconds": 540.0, "trimmed_seconds": 254.0, "status": "trimmed"}
+    )()
+    at.run(timeout=30)
+
+    # State C: top bar shows "Transcript ready" (static chip), right pane
+    # shows the model+timing placeholder, primary button reads "Generate SOAP note".
+    markdown_blocks = " ".join(m.value for m in at.markdown)
+    assert "Transcript ready" in markdown_blocks, "State C chip should show Transcript ready"
+    assert "ms-stage-static" in markdown_blocks, "State C chip should be static variant"
+    assert "Ready to draft a SOAP note" in markdown_blocks, "State C placeholder should be visible"
+
+    from medical_scribe import MODEL_DISPLAY_NAME
+
+    assert MODEL_DISPLAY_NAME in markdown_blocks, "State C placeholder should name the model"
+
+    button_labels = {b.label for b in at.button if b.label}
+    assert any("Generate SOAP note" in label for label in button_labels), (
+        f"Primary button should read 'Generate SOAP note' in State C; saw: {button_labels}"
+    )
+
+    # ---- Transition C → D: simulate Generate click (streaming begins) ----
+    # Set the streaming flag directly; AppTest can't freeze mid-stream, so
+    # we verify State D by inspecting derive_stage_label against the current
+    # session state rather than via a rendered rerun (the mocked LLM would
+    # complete streaming in the same rerun, jumping straight to State E).
+    from app import derive_stage_label
+
+    at.session_state["_streaming"] = True
+    at.session_state["soap"] = None  # Clear any leftover soap
+    state_snapshot = {k: at.session_state[k] for k in ["audio_bytes", "tx", "_streaming", "soap"]}
+    d_label = derive_stage_label(state_snapshot)
+    assert d_label == "Generating SOAP…", (
+        f"State D label should be 'Generating SOAP…'; got {d_label!r}"
+    )
+    from app import STAGE_CHIP_VARIANTS
+
+    assert STAGE_CHIP_VARIANTS[d_label] == "active", "State D chip variant should be active"
+
+    # ---- Transition D → E: simulate stream completion ----
+    from collections.abc import MutableMapping
+    from typing import cast
+
+    from app import populate_section_edit_buffers
+
+    soap_text = "## Subjective\nfoo\n## Objective\no\n## Assessment\na\n## Plan\np\n"
+    at.session_state["soap"] = soap_text
+    populate_section_edit_buffers(cast(MutableMapping[str, object], at.session_state), soap_text)
+    at.session_state["_streaming"] = False
+    at.run(timeout=30)
+
+    # State E: chip flips to "SOAP ready" (static), all four cards land in
+    # read mode (*_editing all False), pencil buttons exposed, Copy button
+    # present in the bottom bar.
+    markdown_blocks = " ".join(m.value for m in at.markdown)
+    assert "SOAP ready" in markdown_blocks, "State E chip should show SOAP ready"
+    assert "ms-stage-static" in markdown_blocks, "State E chip should be static variant"
+
+    for key in (
+        "subjective_editing",
+        "objective_editing",
+        "assessment_editing",
+        "plan_editing",
+    ):
+        assert at.session_state[key] is False, (
+            f"{key} should be False in State E (read mode default)"
+        )
+
+    actual_keys = {b.key for b in at.button if b.key}
+    for section in ("subjective", "objective", "assessment", "plan"):
+        assert f"edit_{section}_btn" in actual_keys, (
+            f"pencil button for {section} missing in State E"
+        )
+
+    # ---- State E round-trip: edit Subjective, then cancel ----
+    pencil = next(b for b in at.button if b.key == "edit_subjective_btn")
+    pencil.click()
+    at.run(timeout=30)
+
+    assert at.session_state["subjective_editing"] is True, "pencil click should flip editing flag"
+    assert at.session_state["subjective_edit_snapshot"] is not None, (
+        "pencil click should capture a snapshot"
+    )
+
+    actual_keys = {b.key for b in at.button if b.key}
+    assert "save_subjective_btn" in actual_keys, "Save button should appear in edit mode"
+    assert "cancel_subjective_btn" in actual_keys, "Cancel button should appear in edit mode"
+
+    # Mutate the buffer (simulating typed edits), then cancel.
+    at.session_state["subjective_edit"] = "TYPED OVER"
+    at.run(timeout=30)
+    cancel = next(b for b in at.button if b.key == "cancel_subjective_btn")
+    cancel.click()
+    at.run(timeout=30)
+
+    assert at.session_state["subjective_editing"] is False, "cancel should flip editing flag back"
+    # _MINIMAL_SOAP's Subjective body was "foo" — that's what populate_section_edit_buffers
+    # wrote, and what the snapshot captured on pencil click.
+    assert at.session_state["subjective_edit"] == "foo", (
+        "cancel should restore subjective_edit from the snapshot"
+    )
+    assert at.session_state["subjective_edit_snapshot"] is None, "cancel should clear the snapshot"
