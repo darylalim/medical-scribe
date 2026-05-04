@@ -379,8 +379,11 @@ def _format_session_meta(state: Mapping[str, object]) -> str:
 
     - State A: empty string (no chrome metadata before audio is loaded).
     - State B (audio present, no transcript): "recording · {filename}".
-    - State C onward: "session · {Xm Ys} · trimmed {N}%" if VAD trimmed
-      anything, otherwise "session · {Xm Ys}".
+    - State C onward with trim metadata: "session · {Xm Ys} · trimmed {N}%"
+      if VAD trimmed anything, otherwise "session · {Xm Ys}".
+    - State C onward without trim metadata (defensive — should not occur in
+      production since _render_transcript_pane sets tx_trim alongside tx):
+      "session" alone.
 
     The trim-percentage branch is suppressed in three degenerate cases:
     `trimmed_seconds <= 0` (VAD error path returns 0 — claiming "100%
@@ -395,11 +398,11 @@ def _format_session_meta(state: Mapping[str, object]) -> str:
         return f"recording · {audio_name}"
     trim = state.get("tx_trim")
     if trim is None:
-        return f"session · {audio_name}"
+        return "session"
     original = getattr(trim, "original_seconds", 0)
     trimmed = getattr(trim, "trimmed_seconds", 0)
     if original <= 0:
-        return f"session · {audio_name}"
+        return "session"
     duration = _format_duration(original)
     if trimmed <= 0 or trimmed >= original:
         return f"session · {duration}"
@@ -552,22 +555,14 @@ def show_error(label: str, exc: BaseException) -> None:
 
 
 def _design_tokens_css() -> str:
-    """Compact Modern design tokens — typography, color, spacing, chip and
-    chrome styles, animations. Injected once per page render in main().
+    """Compact Modern design tokens — CSS custom properties only.
 
-    Combines what the previous `_soap_chip_styles_html` covered (SOAP card
-    chips + section headers) with the rest of the token system (top bar,
-    stage chips, skeleton-card shimmer, streaming cursor). Per-section
-    background colors are read from SECTION_COLORS so adding a section in
-    soap_sections.py auto-propagates the chip rule. The drift guards in
-    tests/test_app.py catch SECTION_COLORS / SOAP_SECTIONS divergence.
+    Variable definitions for the color palette, spacing scale, and font
+    stack. Component styles that consume these tokens live in
+    `_components_css()`. Both helpers are injected from `main()`.
     """
-    soap_chip_rules = "\n".join(
-        f".soap-chip-{name.lower()} {{ background: {color}; }}"
-        for name, color in SECTION_COLORS.items()
-    )
-    return f"""<style>
-:root {{
+    return """<style>
+:root {
   --color-surface: #ffffff;
   --color-surface-2: #fafafa;
   --color-canvas: #f9fafb;
@@ -583,8 +578,23 @@ def _design_tokens_css() -> str:
   --s-6: 24px;
 
   --font-mono: "SF Mono", "Menlo", monospace;
-}}
+}
+</style>"""
 
+
+def _components_css() -> str:
+    """Compact Modern component styles — class-based rules that consume the
+    design tokens declared in `_design_tokens_css()`. Includes the top bar,
+    stage chips, skeleton-line shimmer, streaming cursor, SOAP card chips,
+    chooser cards, dropzone styling, State-C placeholder, streaming card
+    body, and Copy bar. Per-section SOAP chip rules are interpolated from
+    `SECTION_COLORS` so adding a section auto-propagates.
+    """
+    soap_chip_rules = "\n".join(
+        f".soap-chip-{name.lower()} {{ background: {color}; }}"
+        for name, color in SECTION_COLORS.items()
+    )
+    return f"""<style>
 /* Top bar */
 .ms-topbar {{
   display: flex;
@@ -731,6 +741,45 @@ def _design_tokens_css() -> str:
 [data-testid="stFileUploaderDropzone"] {{
   border: 2px dashed #d1d5db !important;
   background: var(--color-surface) !important;
+}}
+
+/* State C placeholder */
+.ms-state-c-block {{
+  text-align: center;
+  padding-top: 48px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}}
+.ms-state-c-heading {{
+  color: var(--color-text);
+  font-weight: 500;
+  margin-bottom: 6px;
+}}
+.ms-state-c-detail {{
+  color: var(--color-text-subtle);
+  line-height: 1.6;
+}}
+.ms-state-c-cta {{
+  margin-top: 16px;
+  color: var(--color-text-muted);
+}}
+
+/* Streaming card body */
+.ms-streaming-card-body {{
+  padding-left: 30px;
+}}
+
+/* Copy bar */
+.ms-copy-bar-divider {{
+  height: 1px;
+  background: var(--color-border);
+  margin-top: 12px;
+}}
+.ms-copy-bar-caption {{
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  padding-top: 14px;
 }}
 </style>"""
 
@@ -1020,7 +1069,7 @@ def _render_streaming_card(name: str, status: str, body: str) -> None:
         _render_section_header(name, muted=(status == "pending"))
         if status == "pending":
             st.markdown(
-                '<div style="padding-left:30px;">'
+                '<div class="ms-streaming-card-body">'
                 '<div class="ms-skel-line" style="width:80%"></div>'
                 '<div class="ms-skel-line" style="width:60%"></div>'
                 '<div class="ms-skel-line" style="width:70%"></div>'
@@ -1114,16 +1163,15 @@ def _render_soap_pane_state_c_placeholder() -> None:
     wall-clock so the clinician sees the work that's about to happen.
     """
     st.markdown(
-        "<div style='text-align:center; padding-top:48px; "
-        "color: var(--color-text-muted); font-size:13px;'>"
-        "<div style='color: var(--color-text); font-weight:500; margin-bottom:6px;'>"
+        '<div class="ms-state-c-block">'
+        '<div class="ms-state-c-heading">'
         "Ready to draft a SOAP note"
         "</div>"
-        "<div style='color: var(--color-text-subtle); line-height:1.6;'>"
+        '<div class="ms-state-c-detail">'
         f"{MODEL_DISPLAY_NAME}, ~{DEFAULT_MAX_TOKENS} tokens<br>"
         "Streamed live; typically 20–40 seconds."  # noqa: RUF001
         "</div>"
-        "<div style='margin-top:16px; color: var(--color-text-muted);'>"
+        '<div class="ms-state-c-cta">'
         "Click <b>Generate SOAP note</b> on the left to start."
         "</div>"
         "</div>",
@@ -1243,17 +1291,11 @@ def _render_soap_pane_state_e(soap: str) -> None:
 
     # Copy bar — bottom-of-pane band with metadata caption + Copy button.
     edits = {name: st.session_state[SECTION_KEY_MAP[name]] for name in SOAP_SECTIONS}
-    st.markdown(
-        "<div style='height: 1px; background: var(--color-border); margin-top: 12px;'></div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="ms-copy-bar-divider"></div>', unsafe_allow_html=True)
     bar_cols = st.columns([4, 2])
     with bar_cols[0]:
         st.markdown(
-            "<div style='font-family: var(--font-mono); font-size: 11px; "
-            "color: var(--color-text-subtle); padding-top: 14px;'>"
-            "Editable"
-            "</div>",
+            '<div class="ms-copy-bar-caption">Editable</div>',
             unsafe_allow_html=True,
         )
     with bar_cols[1]:
@@ -1316,10 +1358,10 @@ def main() -> None:
     st.set_page_config(page_title="Medical Scribe — SOAP", layout="wide")
     init_state()
     # Compact Modern design tokens — typography, color, chrome styles,
-    # animations. Injected once per page render so every helper that emits
-    # class-based markup (top bar, stage chip, SOAP cards, streaming
-    # placeholders) finds its styles already declared.
+    # animations. Tokens (CSS variables) are declared first, then component
+    # rules that consume them.
     st.markdown(_design_tokens_css(), unsafe_allow_html=True)
+    st.markdown(_components_css(), unsafe_allow_html=True)
     require_hf_token()
 
     # Eager model load — surface any error before the user uploads.

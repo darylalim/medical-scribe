@@ -1004,16 +1004,12 @@ def test_section_colors_are_all_aa_grade():
         assert ratio >= 4.5, f"{name} chip {SECTION_COLORS[name]} contrast {ratio:.2f}:1 < 4.5:1"
 
 
-def test_design_tokens_css_contains_required_classes():
-    """Smoke-test: the injected CSS block must declare every class name that
-    other render functions assume. If a class is removed accidentally, the
-    UI falls back to default Streamlit styling silently — this test catches
-    it."""
+def test_design_tokens_css_contains_required_variables():
+    """The design tokens CSS block must declare every CSS variable that
+    component styles and inline styles consume."""
     from app import _design_tokens_css
 
     css = _design_tokens_css()
-
-    # Token variables
     for var in [
         "--color-surface",
         "--color-canvas",
@@ -1024,7 +1020,21 @@ def test_design_tokens_css_contains_required_classes():
     ]:
         assert var in css, f"missing CSS variable {var}"
 
-    # Class names referenced by helpers in later tasks
+
+def test_design_tokens_css_is_wrapped_in_style_tag():
+    from app import _design_tokens_css
+
+    css = _design_tokens_css()
+    assert css.startswith("<style>")
+    assert css.endswith("</style>") or css.endswith("</style>\n")
+
+
+def test_components_css_contains_required_classes():
+    """The components CSS block must declare every class name that other
+    render functions reference."""
+    from app import _components_css
+
+    css = _components_css()
     for cls in [
         ".ms-topbar",
         ".ms-stage-chip",
@@ -1038,20 +1048,19 @@ def test_design_tokens_css_contains_required_classes():
         ".ms-chooser-title",
         ".ms-chooser-caption",
         ".ms-mic-circle",
+        # Newly extracted classes from inline-style cleanup:
+        ".ms-state-c-block",
+        ".ms-state-c-heading",
+        ".ms-state-c-detail",
+        ".ms-state-c-cta",
+        ".ms-streaming-card-body",
+        ".ms-copy-bar-divider",
+        ".ms-copy-bar-caption",
     ]:
         assert cls in css, f"missing CSS class {cls}"
 
-    # Animations
     for anim in ["@keyframes ms-pulse", "@keyframes ms-shimmer", "@keyframes ms-cursor-blink"]:
         assert anim in css, f"missing animation {anim}"
-
-
-def test_design_tokens_css_is_wrapped_in_style_tag():
-    from app import _design_tokens_css
-
-    css = _design_tokens_css()
-    assert css.startswith("<style>")
-    assert css.endswith("</style>\n") or css.endswith("</style>")
 
 
 @pytest.mark.parametrize(
@@ -1150,6 +1159,18 @@ def test_stage_chip_html_escapes_label_text():
                 "tx_trim": type("TR", (), {"original_seconds": 300.0, "trimmed_seconds": 0.0})(),
             },
             "session · 5m 0s",
+        ),
+        # State C+ degenerate — tx is set but tx_trim is missing (defensive
+        # path). Helper returns plain "session" rather than reusing State B's
+        # "session · {filename}" form.
+        (
+            {
+                "audio_bytes": b"x",
+                "audio_name": "v.wav",
+                "tx": "transcript",
+                "tx_trim": None,
+            },
+            "session",
         ),
     ],
 )
