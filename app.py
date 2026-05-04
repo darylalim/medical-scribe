@@ -1108,129 +1108,109 @@ def _render_section_card(name: str) -> None:
                     st.rerun()
 
 
-def _render_soap_pane(model, tokenizer) -> None:
-    """Right pane of State C split view: streaming SOAP cards while
-    `_streaming` is True; read-mode cards (toggle to edit via pencil) once a SOAP draft exists;
-    placeholder copy when transcript is ready but Generate has not been
-    clicked yet.
+def _render_soap_pane_state_c_placeholder() -> None:
+    """State C (transcript ready, no SOAP, not streaming): "what to expect"
+    placeholder. Names the model, rough token budget, and typical
+    wall-clock so the clinician sees the work that's about to happen.
+    """
+    st.markdown(
+        "<div style='text-align:center; padding-top:48px; "
+        "color: var(--color-text-muted); font-size:13px;'>"
+        "<div style='color: var(--color-text); font-weight:500; margin-bottom:6px;'>"
+        "Ready to draft a SOAP note"
+        "</div>"
+        "<div style='color: var(--color-text-subtle); line-height:1.6;'>"
+        f"{MODEL_DISPLAY_NAME}, ~{DEFAULT_MAX_TOKENS} tokens<br>"
+        "Streamed live; typically 20–40 seconds."  # noqa: RUF001
+        "</div>"
+        "<div style='margin-top:16px; color: var(--color-text-muted);'>"
+        "Click <b>Generate SOAP note</b> on the left to start."
+        "</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    The four `*_edit` session-state buffers are the canonical SOAP body
-    post-stream. They are populated once via `populate_section_edit_buffers`
-    on stream completion; from that point on they're the source of truth
-    for the Copy button (`format_for_clipboard`) and survive across reruns.
 
-    Uses `value=` + manual `st.session_state` sync for each card body
-    text_area (not `key=`) per the CLAUDE.md invariant — same reasoning as
-    the transcript pane."""
-    tx = st.session_state["tx"]
-    soap = st.session_state["soap"]
-    is_streaming = bool(st.session_state.get("_streaming"))
+def _render_soap_pane_streaming(model, tokenizer) -> None:
+    """State D: streaming with per-card skeleton placeholders.
 
-    # State B: transcribing. Right pane renders BEFORE the transcript pane
-    # (see _render_split_view's column order) so this placeholder is visible
-    # while the synchronous transcribe call blocks the left pane's spinner.
-    if tx is None:
-        st.markdown("_Awaiting transcript…_")
-        return
+    Render all four cards from t=0 with their own st.empty() placeholders.
+    On each chunk, compute_section_states yields the new per-card states;
+    we update only the placeholders whose (name, status, body) tuple
+    actually changed. Pending/completed cards stay stable across chunks
+    (no DOM churn); only the active card re-renders as its body grows.
+    """
+    status_placeholder = st.empty()
+    status_placeholder.markdown(f"_{streaming_status_label([])}_")
 
-    # State C (transcript ready, no SOAP, not streaming): "what to expect"
-    # placeholder. Names the model, rough token budget, and typical
-    # wall-clock so the clinician sees the work that's about to happen.
-    if soap is None and not is_streaming:
-        st.markdown(
-            "<div style='text-align:center; padding-top:48px; "
-            "color: var(--color-text-muted); font-size:13px;'>"
-            "<div style='color: var(--color-text); font-weight:500; margin-bottom:6px;'>"
-            "Ready to draft a SOAP note"
-            "</div>"
-            "<div style='color: var(--color-text-subtle); line-height:1.6;'>"
-            f"{MODEL_DISPLAY_NAME}, ~{DEFAULT_MAX_TOKENS} tokens<br>"
-            "Streamed live; typically 20–40 seconds."  # noqa: RUF001
-            "</div>"
-            "<div style='margin-top:16px; color: var(--color-text-muted);'>"
-            "Click <b>Generate SOAP note</b> on the left to start."
-            "</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        return
+    # Pre-create one placeholder per card so we can update them
+    # independently inside the streaming loop.
+    card_placeholders: list = []
+    for _ in SOAP_SECTIONS:
+        card_placeholders.append(st.empty())
 
-    # State D: streaming with per-card skeleton placeholders.
-    #
-    # Render all four cards from t=0 with their own st.empty() placeholders.
-    # On each chunk, compute_section_states yields the new per-card states;
-    # we update only the placeholders whose (name, status, body) tuple
-    # actually changed. Pending/completed cards stay stable across chunks
-    # (no DOM churn); only the active card re-renders as its body grows.
-    if is_streaming:
-        status_placeholder = st.empty()
-        status_placeholder.markdown(f"_{streaming_status_label([])}_")
+    # Initial render: every card pending.
+    initial_states: list[tuple[str, str, str]] = [(name, "pending", "") for name in SOAP_SECTIONS]
+    for placeholder, (name, status, body) in zip(card_placeholders, initial_states, strict=True):
+        with placeholder.container():
+            _render_streaming_card(name, status, body)
+    last_card_states = list(initial_states)
 
-        # Pre-create one placeholder per card so we can update them
-        # independently inside the streaming loop.
-        card_placeholders: list = []
-        for _ in SOAP_SECTIONS:
-            card_placeholders.append(st.empty())
-
-        # Initial render: every card pending.
-        initial_states: list[tuple[str, str, str]] = [
-            (name, "pending", "") for name in SOAP_SECTIONS
-        ]
-        for placeholder, (name, status, body) in zip(
-            card_placeholders, initial_states, strict=True
+    buf = ""
+    meta: dict[str, object] = {}
+    last_status: str | None = None
+    try:
+        for chunk in stream_soap(
+            model,
+            tokenizer,
+            st.session_state["tx_edit"],
+            max_tokens=DEFAULT_MAX_TOKENS,
+            meta=meta,
         ):
-            with placeholder.container():
-                _render_streaming_card(name, status, body)
-        last_card_states = list(initial_states)
+            buf += chunk
+            section_states = compute_section_states(buf, list(SOAP_SECTIONS))
+            seen_names = [name for name, status, _ in section_states if status != "pending"]
 
-        buf = ""
-        meta: dict[str, object] = {}
-        last_status: str | None = None
-        try:
-            for chunk in stream_soap(
-                model,
-                tokenizer,
-                st.session_state["tx_edit"],
-                max_tokens=DEFAULT_MAX_TOKENS,
-                meta=meta,
+            status_text = streaming_status_label(seen_names)
+            if status_text != last_status:
+                status_placeholder.markdown(f"_{status_text}_")
+                last_status = status_text
+
+            # Per-card throttle: re-render only the cards whose
+            # (name, status, body) actually changed since last chunk.
+            for i, (state, last_state) in enumerate(
+                zip(section_states, last_card_states, strict=True)
             ):
-                buf += chunk
-                section_states = compute_section_states(buf, list(SOAP_SECTIONS))
-                seen_names = [name for name, status, _ in section_states if status != "pending"]
-
-                status_text = streaming_status_label(seen_names)
-                if status_text != last_status:
-                    status_placeholder.markdown(f"_{status_text}_")
-                    last_status = status_text
-
-                # Per-card throttle: re-render only the cards whose
-                # (name, status, body) actually changed since last chunk.
-                for i, (state, last_state) in enumerate(
-                    zip(section_states, last_card_states, strict=True)
-                ):
-                    if state != last_state:
-                        with card_placeholders[i].container():
-                            _render_streaming_card(*state)
-                        last_card_states[i] = state
-        except Exception as exc:
-            for placeholder in card_placeholders:
-                placeholder.empty()
-            status_placeholder.empty()
-            show_error("SOAP generation failed", exc)
-            st.session_state["soap"] = None
-            st.session_state["soap_truncated"] = False
-            st.session_state["_streaming"] = False
-            return
-
-        # Stream completed. Persist, populate edit buffers, flip flag, rerun.
-        st.session_state["soap"] = buf
-        update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
-        populate_section_edit_buffers(cast(MutableMapping[str, object], st.session_state), buf)
+                if state != last_state:
+                    with card_placeholders[i].container():
+                        _render_streaming_card(*state)
+                    last_card_states[i] = state
+    except Exception as exc:
+        for placeholder in card_placeholders:
+            placeholder.empty()
+        status_placeholder.empty()
+        show_error("SOAP generation failed", exc)
+        st.session_state["soap"] = None
+        st.session_state["soap_truncated"] = False
         st.session_state["_streaming"] = False
-        st.rerun()
+        return
 
-    # States E: SOAP exists; cards default to read mode with click-to-edit.
-    parsed = parse_soap_sections(soap or "")
+    # Stream completed. Persist, populate edit buffers, flip flag, rerun.
+    st.session_state["soap"] = buf
+    update_truncation_flag(cast(MutableMapping[str, object], st.session_state), meta)
+    populate_section_edit_buffers(cast(MutableMapping[str, object], st.session_state), buf)
+    st.session_state["_streaming"] = False
+    st.rerun()
+
+
+def _render_soap_pane_state_e(soap: str) -> None:
+    """State E: SOAP exists; cards default to read mode with click-to-edit.
+
+    Caller guarantees `soap` is non-None at the call site; this helper does
+    not re-check. Renders truncation warning, parse-failure warning,
+    per-section cards, OTHER card for unparsed remainder, and the Copy bar.
+    """
+    parsed = parse_soap_sections(soap)
 
     # Persistent truncation warning.
     if st.session_state.get("soap_truncated", False):
@@ -1281,6 +1261,38 @@ def _render_soap_pane(model, tokenizer) -> None:
             format_for_clipboard(edits),
             key="copy_btn",
         )
+
+
+def _render_soap_pane(model, tokenizer) -> None:
+    """Right pane of the persistent split view. Dispatches to one of four
+    sub-renders based on session-state shape (see derive_stage_label).
+
+    State B: 'Awaiting transcript…' placeholder while the transcribe call
+    is in flight.
+    State C: model+timing placeholder, prompting the user to click Generate.
+    State D: skeleton-card streaming.
+    State E: editable cards + Copy bar.
+    """
+    tx = st.session_state["tx"]
+    soap = st.session_state["soap"]
+    is_streaming = bool(st.session_state.get("_streaming"))
+
+    # State B: transcribing. Right pane renders BEFORE the transcript pane
+    # (see _render_split_view's column order) so this placeholder is visible
+    # while the synchronous transcribe call blocks the left pane's spinner.
+    if tx is None:
+        st.markdown("_Awaiting transcript…_")
+        return
+
+    if soap is None and not is_streaming:
+        _render_soap_pane_state_c_placeholder()
+        return
+
+    if is_streaming:
+        _render_soap_pane_streaming(model, tokenizer)
+        return
+
+    _render_soap_pane_state_e(soap or "")
 
 
 def _render_split_view(asr_pipe, vad_model, model, tokenizer) -> None:
